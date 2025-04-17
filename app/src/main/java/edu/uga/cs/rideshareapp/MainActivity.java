@@ -2,9 +2,11 @@ package edu.uga.cs.rideshareapp;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.Button;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
+import com.google.firebase.auth.FirebaseAuth;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -38,15 +40,29 @@ public class MainActivity extends AppCompatActivity {
         registerButton = findViewById(R.id.registerButton);
 
         loginButton.setOnClickListener(v -> {
+            Log.i("Button", "Login Button Clicked");
             Intent intent = new Intent(MainActivity.this, LoginActivity.class);
             startActivity(intent);
         });
 
         registerButton.setOnClickListener(v -> {
+            Log.i("Button", "Register Button Clicked");
             Intent intent = new Intent(MainActivity.this, RegisterActivity.class);
             startActivity(intent);
         });
 
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+
+        if (FirebaseAuth.getInstance().getCurrentUser() != null) {
+            // User is already logged in, go to HomeActivity
+            Intent intent = new Intent(this, HomeActivity.class);
+            startActivity(intent);
+            finish(); // close MainActivity so they can't go back
+        }
     }
 
 }
