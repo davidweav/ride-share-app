@@ -8,10 +8,16 @@
       <SelectionState runConfigName="test01_CreateNewRideOffer()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="test02_CreateNewRideRequest()">
+      <SelectionState runConfigName="test10_AcceptRide()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="test03_GetAllRideOffers()">
+      <SelectionState runConfigName="test11_CompleteRide()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="test12_DeleteRide()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="test13_UpdateRide()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
     </selectionStates>

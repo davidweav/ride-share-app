@@ -218,12 +218,13 @@ public class RideService {
     /**
      * Fetches ride offers (driver set, rider null, not complete).
      * @param excludeCurrentUser If true, excludes offers posted by the current user.
+     * If false, fetches *only* offers posted by the current user.
      * @param listener Listener to receive the list of offers or error.
      */
     public void getAllRideOffers(boolean excludeCurrentUser, @NonNull final RideListListener listener) {
-        final String currentUserEmail = excludeCurrentUser ? getCurrentUserEmailForRead(listener) : null;
-        // If excluding user and user isn't logged in/email missing, the helper calls onError and returns null
-        if (excludeCurrentUser && currentUserEmail == null) return;
+        final String currentUserEmail = getCurrentUserEmailForRead(listener);
+        // Need user email regardless of flag now, to filter correctly
+        if (currentUserEmail == null) return; // Error handled in helper
 
         Query query = ridesRef.orderByChild("rider").equalTo(null);
         query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride -> {
@@ -232,22 +233,24 @@ public class RideService {
             boolean noRider = ride.getRider() == null || ride.getRider().trim().isEmpty();
             boolean notComplete = !ride.isComplete();
 
-            // Apply exclusion filter if requested
-            boolean shouldExclude = excludeCurrentUser && Objects.equals(ride.getDriver(), currentUserEmail);
+            // Apply filter based on excludeCurrentUser flag
+            boolean userMatches = Objects.equals(ride.getDriver(), currentUserEmail);
+            boolean shouldInclude = excludeCurrentUser ? !userMatches : userMatches;
 
-            return hasDriver && noRider && notComplete && !shouldExclude;
+            return hasDriver && noRider && notComplete && shouldInclude;
         }, "getAllRideOffers"));
     }
 
     /**
      * Fetches ride requests (rider set, driver null, not complete).
      * @param excludeCurrentUser If true, excludes requests posted by the current user.
+     * If false, fetches *only* requests posted by the current user.
      * @param listener Listener to receive the list of requests or error.
      */
     public void getAllRideRequests(boolean excludeCurrentUser, @NonNull final RideListListener listener) {
-        final String currentUserEmail = excludeCurrentUser ? getCurrentUserEmailForRead(listener) : null;
-        // If excluding user and user isn't logged in/email missing, the helper calls onError and returns null
-        if (excludeCurrentUser && currentUserEmail == null) return;
+        final String currentUserEmail = getCurrentUserEmailForRead(listener);
+        // Need user email regardless of flag now, to filter correctly
+        if (currentUserEmail == null) return; // Error handled in helper
 
         Query query = ridesRef.orderByChild("driver").equalTo(null);
         query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride -> {
@@ -256,21 +259,22 @@ public class RideService {
             boolean noDriver = ride.getDriver() == null || ride.getDriver().trim().isEmpty();
             boolean notComplete = !ride.isComplete();
 
-            // Apply exclusion filter if requested
-            boolean shouldExclude = excludeCurrentUser && Objects.equals(ride.getRider(), currentUserEmail);
+            // Apply filter based on excludeCurrentUser flag
+            boolean userMatches = Objects.equals(ride.getRider(), currentUserEmail);
+            boolean shouldInclude = excludeCurrentUser ? !userMatches : userMatches;
 
-            return hasRider && noDriver && notComplete && !shouldExclude;
+            return hasRider && noDriver && notComplete && shouldInclude;
         }, "getAllRideRequests"));
     }
 
     /**
      * Fetches all accepted rides (driver set, rider set, not complete)
-     * involving the currently logged-in user.
+     * where the current user is either the driver or the rider.
      * @param listener Listener to receive the list of accepted rides or error.
      */
     public void getAllAcceptedRides(@NonNull final RideListListener listener) {
         final String currentUserEmail = getCurrentUserEmailForRead(listener);
-        if (currentUserEmail == null) return; // Not logged in, error handled by helper
+        if (currentUserEmail == null) return; // Error handled in helper
 
         // Query by isComplete=false, filter the rest client-side
         Query query = ridesRef.orderByChild("complete").equalTo(false);
@@ -278,12 +282,13 @@ public class RideService {
             // Client-side filtering for accepted rides involving the current user
             boolean hasDriver = ride.getDriver() != null && !ride.getDriver().trim().isEmpty();
             boolean hasRider = ride.getRider() != null && !ride.getRider().trim().isEmpty();
-            // Check if current user is either the driver or the rider
-            boolean userIsParticipant = Objects.equals(ride.getDriver(), currentUserEmail) || Objects.equals(ride.getRider(), currentUserEmail);
-            boolean notComplete = !ride.isComplete(); // Should be true from query, but good practice
+            boolean notComplete = !ride.isComplete(); // Should be true from query
+            // Check if current user is involved
+            boolean userIsDriver = Objects.equals(currentUserEmail, ride.getDriver());
+            boolean userIsRider = Objects.equals(currentUserEmail, ride.getRider());
 
-            return hasDriver && hasRider && notComplete && userIsParticipant;
-        }, "getAllAcceptedRides (for current user)"));
+            return hasDriver && hasRider && notComplete && (userIsDriver || userIsRider);
+        }, "getAllAcceptedRides"));
     }
 
     // Helper for creating ValueEventListeners for lists

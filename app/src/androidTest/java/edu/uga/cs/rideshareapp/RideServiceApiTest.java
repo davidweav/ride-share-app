@@ -29,6 +29,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects; // Import Objects
+import java.util.UUID; // Import UUID for random locations
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException; // Import ExecutionException
 import java.util.concurrent.TimeUnit;
@@ -53,7 +54,7 @@ public class RideServiceApiTest {
     private static final String TAG = "RideServiceApiTest"; // Use Android Log tag
     private static final int ASYNC_TIMEOUT_SECONDS = 25; // Generous timeout for device tests
     private static final String TEST_USER_EMAIL = "asr05918@uga.edu";
-    private static final String TEST_USER_PASSWORD = "YOUR_PASSWORD_HERE"; // <<< --- IMPORTANT: SET PASSWORD HERE
+    private static final String TEST_USER_PASSWORD = "spaugh11AA@@"; // <<< --- IMPORTANT: SET PASSWORD HERE
 
     // Shared state for tests (use cautiously) - consider creating fresh data per test
     private static final AtomicInteger lastCreatedRideId = new AtomicInteger(-1);
@@ -358,12 +359,16 @@ public class RideServiceApiTest {
         rideService.getAllAcceptedRides(new RideService.RideListListener() {
             @Override
             public void onRidesFetched(List<Ride> rides) {
-                Log.d(TAG,"GetAllAcceptedRides: Success - Fetched " + rides.size() + " accepted rides.");
+                Log.d(TAG,"GetAllAcceptedRides: Success - Fetched " + rides.size() + " accepted rides for user " + TEST_USER_EMAIL);
                 assertNotNull(rides);
                 for (Ride ride : rides) {
+                    Log.d(TAG,"  Accepted: ID=" + ride.getRideId() + ", Driver=" + ride.getDriver() + ", Rider=" + ride.getRider());
                     assertNotNull(ride.getDriver());
                     assertNotNull(ride.getRider());
                     assertFalse(ride.isComplete());
+                    // Verify current user is involved
+                    assertTrue("Current user should be driver or rider",
+                            Objects.equals(TEST_USER_EMAIL, ride.getDriver()) || Objects.equals(TEST_USER_EMAIL, ride.getRider()));
                 }
                 success.set(true);
                 latch.countDown();
@@ -477,7 +482,7 @@ public class RideServiceApiTest {
         final AtomicBoolean success = new AtomicBoolean(false);
         // !!! IMPORTANT: Replace with an ID of a ride involving TEST_USER_EMAIL !!!
         // !!! Be careful, this permanently deletes data !!!
-        int rideIdToDelete = 3; // <<< --- FIND/CREATE A VALID ID FOR THIS (Maybe create in test01/02 and store ID?)
+        int rideIdToDelete = 10; // <<< --- FIND/CREATE A VALID ID FOR THIS (Maybe create in test01/02 and store ID?)
 
         Log.d(TAG,"Attempting to delete ride ID: " + rideIdToDelete);
 
@@ -502,6 +507,85 @@ public class RideServiceApiTest {
         // Add verification step: Try to fetch ride `rideIdToDelete` and assert it's null
     }
 
-    // Add testUpdateRide similarly if needed, expecting onSuccess if authorized.
+    // --- New Test for Update ---
+    @Test
+    public void test13_UpdateRide() throws InterruptedException {
+        Log.i(TAG,"\n>>> Testing: Update Ride <<<");
+        final CountDownLatch fetchLatch = new CountDownLatch(1);
+        final CountDownLatch updateLatch = new CountDownLatch(1);
+        final AtomicBoolean fetchSuccess = new AtomicBoolean(false);
+        final AtomicBoolean updateSuccess = new AtomicBoolean(false);
+        final AtomicReference<Ride> originalRide = new AtomicReference<>();
+
+        // !!! IMPORTANT: Replace with an ID of a ride involving TEST_USER_EMAIL !!!
+        final int rideIdToUpdate = 10; // <<< --- FIND/CREATE A VALID ID FOR THIS
+        final String newFromLocation = "Updated From Location " + UUID.randomUUID().toString().substring(0, 6);
+        final String newToLocation = "Updated To Location " + UUID.randomUUID().toString().substring(0, 6);
+
+        Log.d(TAG, "Attempting to fetch ride ID: " + rideIdToUpdate + " for update");
+
+        // 1. Fetch the ride first
+        rideService.getRideById(rideIdToUpdate, new RideService.RideSingleListener() {
+            @Override
+            public void onRideFetched(@Nullable Ride ride) {
+                if (ride != null) {
+                    Log.d(TAG,"UpdateRide: Fetched original ride ID " + rideIdToUpdate);
+                    originalRide.set(ride);
+                    fetchSuccess.set(true);
+                } else {
+                    Log.e(TAG,"UpdateRide: Ride " + rideIdToUpdate + " not found for update.");
+                    fetchSuccess.set(false);
+                    fail("Cannot update ride: Ride " + rideIdToUpdate + " not found.");
+                }
+                fetchLatch.countDown();
+            }
+
+            @Override
+            public void onError(DatabaseError databaseError) {
+                Log.e(TAG,"UpdateRide: Error fetching ride " + rideIdToUpdate, databaseError.toException());
+                fetchSuccess.set(false);
+                fetchLatch.countDown();
+                fail("Failed to fetch ride for update: " + databaseError.getMessage());
+            }
+        });
+
+        // Wait for the fetch operation to complete
+        assertTrue("Fetch ride for update callback timed out", waitForLatch(fetchLatch, "Fetch Ride for Update"));
+        assertTrue("Fetch ride for update failed", fetchSuccess.get());
+        assertNotNull("Original ride object is null after fetch", originalRide.get());
+
+        // 2. If fetch was successful, proceed with update
+        Ride rideToUpdate = originalRide.get();
+        Log.d(TAG, "Original From: " + rideToUpdate.getFrom() + ", Original To: " + rideToUpdate.getTo());
+        rideToUpdate.setFrom(newFromLocation);
+        rideToUpdate.setTo(newToLocation);
+        Log.d(TAG, "Attempting to update ride ID: " + rideIdToUpdate + " with From: " + newFromLocation + ", To: " + newToLocation);
+
+
+        rideService.updateRide(rideIdToUpdate, rideToUpdate, new RideService.CompletionListener() {
+            @Override
+            public void onSuccess() {
+                Log.d(TAG,"UpdateRide: onSuccess (Expected)");
+                updateSuccess.set(true);
+                updateLatch.countDown();
+            }
+
+            @Override
+            public void onFailure(Exception e) {
+                Log.e(TAG,"UpdateRide: onFailure (Unexpected if ride " + rideIdToUpdate + " exists and user is involved)", e);
+                updateSuccess.set(false);
+                updateLatch.countDown();
+                fail("Update Ride failed: " + e.getMessage());
+            }
+        });
+
+        // Wait for the update operation
+        assertTrue("Update Ride callback timed out", waitForLatch(updateLatch, "Update Ride"));
+        assertTrue("Update Ride operation failed", updateSuccess.get());
+
+        // Add verification step: Fetch ride `rideIdToUpdate` again and assert 'from' and 'to' match new locations
+        // (This would require another async call and latch)
+        Log.i(TAG, "Update test completed. Manual verification or further async fetch needed to confirm DB changes.");
+    }
 
 }
