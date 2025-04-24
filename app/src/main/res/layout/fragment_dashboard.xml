@@ -21,7 +21,7 @@
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rideRequests"
         android:layout_width="180dp"
-        android:layout_height="180dp"
+        android:layout_height="wrap_content"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintHorizontal_bias="0.5"
@@ -79,7 +79,7 @@
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rideOffers"
         android:layout_width="180dp"
-        android:layout_height="179dp"
+        android:layout_height="wrap_content"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toStartOf="@+id/rideRequests"
         app:layout_constraintHorizontal_bias="0.5"

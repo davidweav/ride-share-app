@@ -8,6 +8,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import edu.uga.cs.rideshareapp.R;
@@ -16,9 +17,11 @@ import edu.uga.cs.rideshareapp.model.Ride;
 public class RideAdapter extends RecyclerView.Adapter<RideAdapter.RideViewHolder> {
 
     private List<Ride> rideList;
+    private OnRideClickListener listener;
 
-    public RideAdapter(List<Ride> rideList) {
-        this.rideList = rideList;
+    public RideAdapter(List<Ride> rideList, OnRideClickListener listener) {
+        this.rideList = rideList != null ? rideList : new ArrayList<>();
+        this.listener = listener;
     }
 
     @NonNull
@@ -35,6 +38,13 @@ public class RideAdapter extends RecyclerView.Adapter<RideAdapter.RideViewHolder
         holder.date.setText(ride.getDateTime());
         holder.from.setText("From: " + ride.getFrom());
         holder.to.setText("To: " + ride.getTo());
+
+        holder.itemView.setOnClickListener(v -> {
+            if (listener != null) {
+                listener.onRideClick(rideList.get(position));
+            }
+        });
+
     }
 
     @Override
@@ -51,5 +61,9 @@ public class RideAdapter extends RecyclerView.Adapter<RideAdapter.RideViewHolder
             from = itemView.findViewById(R.id.fromText);
             to = itemView.findViewById(R.id.toText);
         }
+    }
+
+    public interface OnRideClickListener {
+        void onRideClick(Ride ride);
     }
 }
