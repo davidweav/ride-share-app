@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/postRideRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/chapel_bell_white"
+    android:padding="16dp">
+
+    <!-- Centered CardView for the form -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/postRideCard"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        app:cardCornerRadius="16dp"
+        app:cardElevation="8dp"
+        app:cardBackgroundColor="@color/chapel_bell_white"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="24dp">
+
+            <!-- Ride Type -->
+            <TextView
+                android:id="@+id/typeLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Ride Type"
+                android:textStyle="bold"
+                android:textColor="@color/bulldog_red"
+                android:textSize="16sp"/>
+
+            <RadioGroup
+                android:id="@+id/rideTypeGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+                <RadioButton
+                    android:id="@+id/offerRadio"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Offer" />
+
+                <RadioButton
+                    android:id="@+id/requestRadio"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Request"
+                    android:layout_marginStart="16dp" />
+            </RadioGroup>
+
+            <!-- Date and Time -->
+            <EditText
+                android:id="@+id/dateTimeField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:drawableEnd="@android:drawable/ic_menu_today"
+                android:focusable="auto"
+                android:hint="Select Date and Time"
+                android:inputType="datetime" />
+
+            <!-- From Location -->
+            <EditText
+                android:id="@+id/fromField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="From"
+                android:inputType="text"
+                android:layout_marginTop="16dp"/>
+
+            <!-- To Location -->
+            <EditText
+                android:id="@+id/toField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="To"
+                android:inputType="text"
+                android:layout_marginTop="16dp"/>
+
+            <!-- Submit Button -->
+            <Button
+                android:id="@+id/postRideButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Post Ride"
+                android:backgroundTint="@color/bulldog_red"
+                android:textColor="@color/chapel_bell_white"
+                android:layout_marginTop="24dp"/>
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

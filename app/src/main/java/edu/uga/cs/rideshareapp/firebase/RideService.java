@@ -68,9 +68,9 @@ public class RideService {
             return false;
         }
 
-        boolean rideCreated = False;
-        Ride ride;
-        try:
+        boolean rideCreated = false;
+        Ride ride = null;
+        try {
             // Use push() to generate a unique key for the new ride
             DatabaseReference newRideRef = ridesRef.push();
 
@@ -87,13 +87,13 @@ public class RideService {
                 ride = new Ride(dateTime, "", user, from, to, false, "");
             }
             createNewRide(ride);
-            rideCreated = True;
+            rideCreated = true;
         }
         catch (Exception e) {
             Log.e(TAG, "Error creating new ride", e);
-            rideCreated = False;
+            rideCreated = false;
         }
-        return rideCreated;~
+        return rideCreated;
 
 
     }
