@@ -66,9 +66,11 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="24dp"
                 android:drawableEnd="@android:drawable/ic_menu_today"
-                android:focusable="auto"
+                android:focusable="false"
+                android:clickable="true"
                 android:hint="Select Date and Time"
-                android:inputType="datetime" />
+                android:inputType="none" />
+
 
             <!-- From Location -->
             <EditText
