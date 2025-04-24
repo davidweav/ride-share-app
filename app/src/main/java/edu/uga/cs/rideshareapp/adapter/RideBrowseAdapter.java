@@ -10,7 +10,6 @@ import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.List;
@@ -18,79 +17,58 @@ import java.util.List;
 import edu.uga.cs.rideshareapp.R;
 import edu.uga.cs.rideshareapp.model.Ride;
 
-public class RideManageAdapter extends RecyclerView.Adapter<RideManageAdapter.ViewHolder> {
+public class RideBrowseAdapter extends RecyclerView.Adapter<RideBrowseAdapter.ViewHolder> {
 
-    public interface OnRideActionListener {
-        void onEdit(Ride ride);
-        void onDelete(Ride ride);
+    public interface OnRideClickListener {
+        void onRideClick(Ride ride);
     }
 
-    private final List<Ride> rideList;
-    private final OnRideActionListener actionListener;
+    private final List<Ride> rides;
+    private final OnRideClickListener clickListener;
 
-    public RideManageAdapter(List<Ride> rideList, OnRideActionListener actionListener) {
-        this.rideList = rideList;
-        this.actionListener = actionListener;
+    public RideBrowseAdapter(List<Ride> rides, OnRideClickListener clickListener) {
+        this.rides = rides;
+        this.clickListener = clickListener;
     }
 
     @NonNull
     @Override
-    public RideManageAdapter.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+    public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View view = LayoutInflater.from(parent.getContext())
-                .inflate(R.layout.item_ride_manage, parent, false);
+                .inflate(R.layout.item_ride, parent, false);
         return new ViewHolder(view);
     }
 
     @Override
-    public void onBindViewHolder(@NonNull RideManageAdapter.ViewHolder holder, int position) {
-        Ride ride = rideList.get(position);
+    public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+        Ride ride = rides.get(position);
         holder.bind(ride);
     }
 
     @Override
     public int getItemCount() {
-        return rideList != null ? rideList.size() : 0;
+        return rides.size();
     }
 
-    public class ViewHolder extends RecyclerView.ViewHolder {
-        TextView dateText, fromText, toText;
-        ImageButton optionsButton;
+    class ViewHolder extends RecyclerView.ViewHolder {
+        TextView date, from, to;
 
-        public ViewHolder(@NonNull View itemView) {
-            super(itemView);
-            dateText = itemView.findViewById(R.id.dateText);
-            fromText = itemView.findViewById(R.id.fromText);
-            toText = itemView.findViewById(R.id.toText);
-            optionsButton = itemView.findViewById(R.id.optionsButton);
+        ViewHolder(View view) {
+            super(view);
+            date = view.findViewById(R.id.dateText);
+            from = view.findViewById(R.id.fromText);
+            to = view.findViewById(R.id.toText);
+
+            view.setOnClickListener(v -> {
+                if (clickListener != null)
+                    clickListener.onRideClick(rides.get(getAdapterPosition()));
+            });
         }
 
-        public void bind(Ride ride) {
-            dateText.setText(ride.getDateTime());
-            fromText.setText("From: " + ride.getFrom());
-            toText.setText("To: " + ride.getTo());
-
-            optionsButton.setOnClickListener(v -> showPopupMenu(v, ride));
-        }
-
-        private void showPopupMenu(View view, Ride ride) {
-            PopupMenu popup = new PopupMenu(view.getContext(), view);
-            MenuInflater inflater = popup.getMenuInflater();
-            inflater.inflate(R.menu.ride_item_menu, popup.getMenu());
-            popup.setOnMenuItemClickListener(item -> handleMenuClick(item, ride));
-            popup.show();
-        }
-
-        private boolean handleMenuClick(MenuItem item, Ride ride) {
-            if (actionListener == null) return false;
-
-            if (item.getItemId() == R.id.menu_edit) {
-                actionListener.onEdit(ride);
-                return true;
-            } else if (item.getItemId() == R.id.menu_delete) {
-                actionListener.onDelete(ride);
-                return true;
-            }
-            return false;
+        void bind(Ride ride) {
+            date.setText(ride.getDateTime());
+            from.setText("From: " + ride.getFrom());
+            to.setText("To: " + ride.getTo());
         }
     }
 }

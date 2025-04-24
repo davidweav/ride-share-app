@@ -25,7 +25,7 @@ import java.util.List;
 
 import edu.uga.cs.rideshareapp.PostRideActivity;
 import edu.uga.cs.rideshareapp.R;
-import edu.uga.cs.rideshareapp.adapter.RideAdapter;
+import edu.uga.cs.rideshareapp.adapter.RideBrowseAdapter;
 import edu.uga.cs.rideshareapp.firebase.RideService;
 import edu.uga.cs.rideshareapp.model.Ride;
 
@@ -53,7 +53,7 @@ public class RidesFragment extends Fragment {
         rideRequests.setLayoutManager(new LinearLayoutManager(getContext()));
 
         // Initialize adapters with click handlers
-        RideAdapter offerAdapter = new RideAdapter(rideOffersList, ride -> {
+        RideBrowseAdapter offerAdapter = new RideBrowseAdapter(rideOffersList, ride -> {
             rideService.acceptRide(ride.getRideId(), new RideService.CompletionListener() {
                 @Override
                 public void onSuccess() {
@@ -69,7 +69,7 @@ public class RidesFragment extends Fragment {
             });
         });
 
-        RideAdapter requestAdapter = new RideAdapter(rideRequestsList, ride -> {
+        RideBrowseAdapter requestAdapter = new RideBrowseAdapter(rideRequestsList, ride -> {
             rideService.acceptRide(ride.getRideId(), new RideService.CompletionListener() {
                 @Override
                 public void onSuccess() {
@@ -90,7 +90,7 @@ public class RidesFragment extends Fragment {
         rideRequests.setAdapter(requestAdapter);
 
         // Fetch data and update lists
-        rideService.getAllRideOffers(new RideService.RideListListener() {
+        rideService.getAllRideOffers(true, new RideService.RideListListener() {
             @Override
             public void onRidesFetched(List<Ride> rides) {
                 Log.d(TAG, "Received " + rides.size() + " ride offers");
@@ -105,7 +105,7 @@ public class RidesFragment extends Fragment {
             }
         });
 
-        rideService.getAllRideRequests(new RideService.RideListListener() {
+        rideService.getAllRideRequests(true, new RideService.RideListListener() {
             @Override
             public void onRidesFetched(List<Ride> rides) {
                 Log.d(TAG, "Received " + rides.size() + " ride requests");
