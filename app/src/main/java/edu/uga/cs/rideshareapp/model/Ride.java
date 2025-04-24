@@ -7,12 +7,12 @@ public class Ride {
     private String to;
     private String from;
     private boolean isComplete;
-    private String rideId;
+    private int rideId;
 
     public Ride() {
     }
 
-    public Ride(String dateTime, String driver, String rider, String to, String from,  boolean isComplete, String rideId) {
+    public Ride(String dateTime, String driver, String rider, String to, String from,  boolean isComplete, int rideId) {
         this.dateTime = dateTime;
         this.driver = driver;
         this.rider = rider;
@@ -29,7 +29,7 @@ public class Ride {
     public String getRider() { return rider; }
     public String getTo() { return to; }
     public boolean isComplete() { return isComplete; }
-    public String getRideId() { return rideId; }
+    public int getRideId() { return rideId; }
 
     // --- Setters ---
     public void setDateTime(String dateTime) { this.dateTime = dateTime; }
@@ -38,7 +38,7 @@ public class Ride {
     public void setRider(String rider) { this.rider = rider; }
     public void setTo(String to) { this.to = to; }
     public void setComplete(boolean complete) { isComplete = complete; }
-    public void setRideId(String rideId) { this.rideId = rideId; }
+    public void setRideId(int rideId) { this.rideId = rideId; }
 
     @Override
     public String toString() {
