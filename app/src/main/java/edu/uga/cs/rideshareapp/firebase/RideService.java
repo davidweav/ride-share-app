@@ -5,8 +5,8 @@ import androidx.annotation.Nullable;
 
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
-import com.google.firebase.auth.FirebaseAuth; // Import FirebaseAuth
-import com.google.firebase.auth.FirebaseUser; // Import FirebaseUser
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
@@ -20,8 +20,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects; // Import Objects for equals check
+import java.util.Objects;
 
+// Import the updated Ride class
 import edu.uga.cs.rideshareapp.model.Ride;
 import android.util.Log;
 
@@ -30,31 +31,27 @@ public class RideService {
     private final DatabaseReference dbRootRef;
     private final DatabaseReference ridesRef;
     private final DatabaseReference counterRef;
-    private final FirebaseAuth firebaseAuth; // Added FirebaseAuth instance
+    private final FirebaseAuth firebaseAuth;
     private static final String TAG = "RideService";
 
     // --- Callback Interfaces ---
-
     public interface RideListListener {
         void onRidesFetched(List<Ride> rides);
         void onError(DatabaseError databaseError);
     }
-
     public interface RideSingleListener {
         void onRideFetched(@Nullable Ride ride);
         void onError(DatabaseError databaseError);
     }
-
     public interface CompletionListener {
         void onSuccess();
         void onFailure(Exception e);
     }
 
     // --- Constructor ---
-
     public RideService() {
         FirebaseDatabase database = FirebaseDatabase.getInstance();
-        this.firebaseAuth = FirebaseAuth.getInstance(); // Get instance here
+        this.firebaseAuth = FirebaseAuth.getInstance();
         this.dbRootRef = database.getReference();
         this.ridesRef = database.getReference("rides");
         this.counterRef = database.getReference("counters/lastRideId");
@@ -91,7 +88,7 @@ public class RideService {
         };
     }
 
-    /** Gets current user's email or calls listener.onFailure if not logged in. */
+    /** Gets current user's email or calls listener.onFailure if not logged in (for write operations). */
     @Nullable
     private String getCurrentUserEmail(@Nullable CompletionListener listener) {
         FirebaseUser currentUser = firebaseAuth.getCurrentUser();
@@ -109,19 +106,37 @@ public class RideService {
         return email;
     }
 
-    /** Gets current user's email or calls listener.onFailure if not logged in (for read operations). */
+    /** Gets current user's email or calls listener.onError if not logged in (for read operations). */
     @Nullable
-    private String getCurrentUserEmailForRead(@Nullable RideSingleListener listener) {
+    private String getCurrentUserEmailForRead(@NonNull RideListListener listener) { // Changed listener type
         FirebaseUser currentUser = firebaseAuth.getCurrentUser();
         if (currentUser == null) {
             Log.e(TAG, "Operation failed: User not logged in.");
-            if (listener != null) listener.onError(DatabaseError.fromException(new SecurityException("User not logged in")));
+            // Use DatabaseError for consistency with listener type
+            listener.onError(DatabaseError.fromException(new SecurityException("User not logged in")));
             return null;
         }
         String email = currentUser.getEmail();
         if (email == null || email.trim().isEmpty()) {
             Log.e(TAG, "Operation failed: User email is missing.");
-            if (listener != null) listener.onError(DatabaseError.fromException(new IllegalStateException("User email is missing")));
+            listener.onError(DatabaseError.fromException(new IllegalStateException("User email is missing")));
+            return null;
+        }
+        return email;
+    }
+
+    @Nullable
+    private String getCurrentUserEmailForRead(@NonNull RideSingleListener listener) { // Overload for single listener
+        FirebaseUser currentUser = firebaseAuth.getCurrentUser();
+        if (currentUser == null) {
+            Log.e(TAG, "Operation failed: User not logged in.");
+            listener.onError(DatabaseError.fromException(new SecurityException("User not logged in")));
+            return null;
+        }
+        String email = currentUser.getEmail();
+        if (email == null || email.trim().isEmpty()) {
+            Log.e(TAG, "Operation failed: User email is missing.");
+            listener.onError(DatabaseError.fromException(new IllegalStateException("User email is missing")));
             return null;
         }
         return email;
@@ -130,35 +145,25 @@ public class RideService {
 
     // --- Create Operations ---
 
-    /** Internal method to create ride once ID is obtained. */
+    /** Internal method to create ride once ID is obtained. Uses toMap(). */
     private void saveRideData(final Ride ride, final int newId, @Nullable final CompletionListener listener) {
-        ride.setRideId(newId); // Set ID on the object
-        ridesRef.child(String.valueOf(newId)).setValue(ride)
+        ride.setRideId(newId); // Ensure ID is set on the object before mapping
+        ridesRef.child(String.valueOf(newId)).setValue(ride.toMap())
                 .addOnCompleteListener(createWriteCompleteListener(listener, "createNewRide (setValue)"));
     }
 
     /** Creates a new ride entry using an auto-incrementing ID. */
     public void createNewRide(final Ride ride, @Nullable final CompletionListener listener) {
-        if (ride == null) {
-            Log.e(TAG, "Cannot create a null ride.");
-            if (listener != null) listener.onFailure(new IllegalArgumentException("Ride cannot be null"));
-            return;
-        }
-        // Ensure creator is set correctly based on ride data
+        if (ride == null) { if (listener != null) listener.onFailure(new IllegalArgumentException("Ride cannot be null")); return; }
         String currentUserEmail = getCurrentUserEmail(listener);
-        if (currentUserEmail == null) return; // Failure handled in helper
-
+        if (currentUserEmail == null) return;
+        // Authorization checks...
         if (ride.getDriver() != null && !ride.getDriver().isEmpty() && !ride.getDriver().equals(currentUserEmail)) {
-            Log.e(TAG, "Attempting to create ride offer for different user: " + ride.getDriver());
-            if (listener != null) listener.onFailure(new SecurityException("Cannot create ride offer for another user"));
-            return;
+            if (listener != null) listener.onFailure(new SecurityException("Cannot create ride offer for another user")); return;
         }
         if (ride.getRider() != null && !ride.getRider().isEmpty() && !ride.getRider().equals(currentUserEmail)) {
-            Log.e(TAG, "Attempting to create ride request for different user: " + ride.getRider());
-            if (listener != null) listener.onFailure(new SecurityException("Cannot create ride request for another user"));
-            return;
+            if (listener != null) listener.onFailure(new SecurityException("Cannot create ride request for another user")); return;
         }
-
 
         counterRef.runTransaction(new Transaction.Handler() {
             @NonNull @Override
@@ -170,22 +175,12 @@ public class RideService {
 
             @Override
             public void onComplete(@Nullable DatabaseError error, boolean committed, @Nullable DataSnapshot currentData) {
-                if (error != null) {
-                    Log.e(TAG, "Counter transaction failed.", error.toException());
-                    if (listener != null) listener.onFailure(error.toException());
-                } else if (committed && currentData != null) {
+                if (error != null) { if (listener != null) listener.onFailure(error.toException()); }
+                else if (committed && currentData != null) {
                     Integer newId = currentData.getValue(Integer.class);
-                    if (newId != null) {
-                        Log.d(TAG, "Successfully obtained new ride ID: " + newId);
-                        saveRideData(ride, newId, listener); // Call helper to save
-                    } else {
-                        Log.e(TAG, "Failed to retrieve new ID after transaction commit.");
-                        if (listener != null) listener.onFailure(new Exception("Failed to retrieve new ID"));
-                    }
-                } else {
-                    Log.w(TAG, "Counter transaction not committed.");
-                    if (listener != null) listener.onFailure(new Exception("Counter transaction not committed"));
-                }
+                    if (newId != null) { saveRideData(ride, newId, listener); }
+                    else { if (listener != null) listener.onFailure(new Exception("Failed to retrieve new ID")); }
+                } else { if (listener != null) listener.onFailure(new Exception("Counter transaction not committed")); }
             }
         });
     }
@@ -193,70 +188,95 @@ public class RideService {
     /** Creates a new Ride from strings, automatically using the current user. */
     public void createNewRideWithStrings(String dateTime, boolean isDriver, String from, String to, @Nullable CompletionListener listener) {
         String currentUserEmail = getCurrentUserEmail(listener);
-        if (currentUserEmail == null) {
-            return; // Failure already handled by helper
+        if (currentUserEmail == null) return;
+        if (dateTime == null || from == null || to == null || dateTime.isEmpty() || from.isEmpty() || to.isEmpty()) {
+            if (listener != null) listener.onFailure(new IllegalArgumentException("Invalid input")); return;
         }
-
-        if (dateTime == null || from == null || to == null ||
-                dateTime.isEmpty() || from.isEmpty() || to.isEmpty()) {
-            Log.e(TAG, "Invalid input provided for creating a ride.");
-            if (listener != null) listener.onFailure(new IllegalArgumentException("Invalid input for createNewRideWithStrings"));
-            return;
-        }
-
         Ride ride;
         try {
-            if (isDriver) { // User is creating an OFFER
-                ride = new Ride(dateTime, currentUserEmail, null, to, from, false, 0);
-            } else { // User is creating a REQUEST
-                ride = new Ride(dateTime, null, currentUserEmail, to, from, false, 0);
-            }
-            createNewRide(ride, listener); // Call the main create method
-        } catch (Exception e) {
-            Log.e(TAG, "Error preparing ride object", e);
-            if (listener != null) listener.onFailure(e);
-        }
+            if (isDriver) { ride = new Ride(dateTime, currentUserEmail, null, to, from, false, 0); }
+            else { ride = new Ride(dateTime, null, currentUserEmail, to, from, false, 0); }
+            createNewRide(ride, listener);
+        } catch (Exception e) { if (listener != null) listener.onFailure(e); }
     }
 
     // --- Read Operations ---
 
     public void getRideById(int rideId, @NonNull final RideSingleListener listener) {
         ridesRef.child(String.valueOf(rideId)).addListenerForSingleValueEvent(new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull DataSnapshot snapshot) {
+            @Override public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (snapshot.exists()) {
                     Ride ride = snapshot.getValue(Ride.class);
                     if (ride != null) setRideIdFromKey(ride, snapshot.getKey());
                     listener.onRideFetched(ride);
-                } else {
-                    listener.onRideFetched(null); // Not found
-                }
+                } else { listener.onRideFetched(null); }
             }
             @Override public void onCancelled(@NonNull DatabaseError error) { listener.onError(error); }
         });
     }
 
-    public void getAllRideOffers(@NonNull final RideListListener listener) {
+    /**
+     * Fetches ride offers (driver set, rider null, not complete).
+     * @param excludeCurrentUser If true, excludes offers posted by the current user.
+     * @param listener Listener to receive the list of offers or error.
+     */
+    public void getAllRideOffers(boolean excludeCurrentUser, @NonNull final RideListListener listener) {
+        final String currentUserEmail = excludeCurrentUser ? getCurrentUserEmailForRead(listener) : null;
+        // If excluding user and user isn't logged in/email missing, the helper calls onError and returns null
+        if (excludeCurrentUser && currentUserEmail == null) return;
+
         Query query = ridesRef.orderByChild("rider").equalTo(null);
-        query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride ->
-                        (ride.getDriver() != null && !ride.getDriver().trim().isEmpty()) && !ride.isComplete()
-                , "getAllRideOffers"));
+        query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride -> {
+            // Base criteria for an offer
+            boolean hasDriver = ride.getDriver() != null && !ride.getDriver().trim().isEmpty();
+            boolean noRider = ride.getRider() == null || ride.getRider().trim().isEmpty();
+            boolean notComplete = !ride.isComplete();
+
+            // Apply exclusion filter if requested
+            boolean shouldExclude = excludeCurrentUser && Objects.equals(ride.getDriver(), currentUserEmail);
+
+            return hasDriver && noRider && notComplete && !shouldExclude;
+        }, "getAllRideOffers"));
     }
 
-    public void getAllRideRequests(@NonNull final RideListListener listener) {
+    /**
+     * Fetches ride requests (rider set, driver null, not complete).
+     * @param excludeCurrentUser If true, excludes requests posted by the current user.
+     * @param listener Listener to receive the list of requests or error.
+     */
+    public void getAllRideRequests(boolean excludeCurrentUser, @NonNull final RideListListener listener) {
+        final String currentUserEmail = excludeCurrentUser ? getCurrentUserEmailForRead(listener) : null;
+        // If excluding user and user isn't logged in/email missing, the helper calls onError and returns null
+        if (excludeCurrentUser && currentUserEmail == null) return;
+
         Query query = ridesRef.orderByChild("driver").equalTo(null);
-        query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride ->
-                        (ride.getRider() != null && !ride.getRider().trim().isEmpty()) && !ride.isComplete()
-                , "getAllRideRequests"));
+        query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride -> {
+            // Base criteria for a request
+            boolean hasRider = ride.getRider() != null && !ride.getRider().trim().isEmpty();
+            boolean noDriver = ride.getDriver() == null || ride.getDriver().trim().isEmpty();
+            boolean notComplete = !ride.isComplete();
+
+            // Apply exclusion filter if requested
+            boolean shouldExclude = excludeCurrentUser && Objects.equals(ride.getRider(), currentUserEmail);
+
+            return hasRider && noDriver && notComplete && !shouldExclude;
+        }, "getAllRideRequests"));
     }
 
+    /**
+     * Fetches all accepted rides (driver set, rider set, not complete).
+     * @param listener Listener to receive the list of accepted rides or error.
+     */
     public void getAllAcceptedRides(@NonNull final RideListListener listener) {
-        Query query = ridesRef.orderByChild("complete").equalTo(false);
-        query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride ->
-                        (ride.getDriver() != null && !ride.getDriver().trim().isEmpty()) &&
-                                (ride.getRider() != null && !ride.getRider().trim().isEmpty()) &&
-                                !ride.isComplete() // Redundant check due to query, but safe
-                , "getAllAcceptedRides"));
+        // Query by isComplete=false, filter the rest client-side
+        Query query = ridesRef.orderByChild("complete").equalTo(false); // Note: Firebase stores boolean as 'complete'
+        query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride -> {
+            // Client-side filtering for accepted rides
+            boolean hasDriver = ride.getDriver() != null && !ride.getDriver().trim().isEmpty();
+            boolean hasRider = ride.getRider() != null && !ride.getRider().trim().isEmpty();
+            boolean notComplete = !ride.isComplete(); // Should be true from query
+            return hasDriver && hasRider && notComplete;
+        }, "getAllAcceptedRides"));
     }
 
     // Helper for creating ValueEventListeners for lists
@@ -275,101 +295,64 @@ public class RideService {
                         }
                     } catch (Exception e) { Log.e(TAG, opTag + ": Error processing snapshot: " + snapshot.getKey(), e); }
                 }
+                Log.d(TAG, opTag + ": Found " + rides.size() + " matching rides after filtering.");
                 listener.onRidesFetched(rides);
             }
-            @Override public void onCancelled(@NonNull DatabaseError error) { listener.onError(error); }
+            @Override public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, opTag + ": Firebase query cancelled or failed.", error.toException());
+                listener.onError(error);
+            }
         };
     }
 
     // --- Update Operations ---
 
-    /** Updates an entire existing ride. Requires current user to be driver or rider. */
+    /** Updates an entire existing ride using toMap(). Requires current user to be driver or rider. */
     public void updateRide(int rideId, @NonNull Ride updatedRideData, @Nullable CompletionListener listener) {
         String currentUserEmail = getCurrentUserEmail(listener);
         if (currentUserEmail == null) return;
 
         getRideById(rideId, new RideSingleListener() {
             @Override public void onRideFetched(@Nullable Ride existingRide) {
-                if (existingRide == null) {
-                    if (listener != null) listener.onFailure(new Exception("Ride not found"));
-                    return;
-                }
-                // Authorization check
+                if (existingRide == null) { if (listener != null) listener.onFailure(new Exception("Ride not found")); return; }
                 if (!Objects.equals(currentUserEmail, existingRide.getDriver()) && !Objects.equals(currentUserEmail, existingRide.getRider())) {
-                    Log.w(TAG, "User " + currentUserEmail + " not authorized to update ride " + rideId);
-                    if (listener != null) listener.onFailure(new SecurityException("Not authorized to update this ride"));
-                    return;
+                    if (listener != null) listener.onFailure(new SecurityException("Not authorized")); return;
                 }
-
-                // Proceed with update
-                if (updatedRideData.getRideId() != 0 && updatedRideData.getRideId() != rideId) {
-                    Log.w(TAG, "updateRide: Correcting object rideId (" + updatedRideData.getRideId() + ") to match path ID (" + rideId + ").");
-                }
-                updatedRideData.setRideId(rideId); // Ensure ID consistency
-
-                ridesRef.child(String.valueOf(rideId)).setValue(updatedRideData)
+                updatedRideData.setRideId(rideId);
+                ridesRef.child(String.valueOf(rideId)).setValue(updatedRideData.toMap())
                         .addOnCompleteListener(createWriteCompleteListener(listener, "updateRide"));
             }
-            @Override public void onError(DatabaseError databaseError) {
-                if (listener != null) listener.onFailure(databaseError.toException());
-            }
+            @Override public void onError(DatabaseError databaseError) { if (listener != null) listener.onFailure(databaseError.toException()); }
         });
     }
 
     /** Accepts a ride offer/request. Current user becomes the missing driver/rider. */
     public void acceptRide(final int rideId, @Nullable final CompletionListener listener) {
         final String currentUserEmail = getCurrentUserEmail(listener);
-        if (currentUserEmail == null) return; // Not logged in
+        if (currentUserEmail == null) return;
 
         DatabaseReference rideNodeRef = ridesRef.child(String.valueOf(rideId));
         rideNodeRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override public void onDataChange(@NonNull DataSnapshot snapshot) {
-                if (!snapshot.exists()) {
-                    if (listener != null) listener.onFailure(new Exception("Ride not found")); return;
-                }
+                if (!snapshot.exists()) { if (listener != null) listener.onFailure(new Exception("Ride not found")); return; }
                 Ride ride = snapshot.getValue(Ride.class);
-                if (ride == null) {
-                    if (listener != null) listener.onFailure(new Exception("Could not read ride data")); return;
-                }
+                if (ride == null) { if (listener != null) listener.onFailure(new Exception("Could not read ride data")); return; }
 
                 Map<String, Object> updates = new HashMap<>();
-                boolean isAcceptingOffer = false; // Accepting an offer (becoming rider)
-                boolean isAcceptingRequest = false; // Accepting a request (becoming driver)
+                boolean isAcceptingOffer = false, isAcceptingRequest = false;
 
-                // Check if ride is an OFFER (has driver, needs rider)
-                if (ride.getDriver() != null && !ride.getDriver().trim().isEmpty() &&
-                        (ride.getRider() == null || ride.getRider().trim().isEmpty())) {
-                    // Check user is not the driver already
-                    if (Objects.equals(currentUserEmail, ride.getDriver())) {
-                        if (listener != null) listener.onFailure(new IllegalStateException("Cannot accept your own ride offer")); return;
-                    }
-                    updates.put("rider", currentUserEmail);
-                    isAcceptingOffer = true;
-                }
-                // Check if ride is a REQUEST (has rider, needs driver)
-                else if (ride.getRider() != null && !ride.getRider().trim().isEmpty() &&
-                        (ride.getDriver() == null || ride.getDriver().trim().isEmpty())) {
-                    // Check user is not the rider already
-                    if (Objects.equals(currentUserEmail, ride.getRider())) {
-                        if (listener != null) listener.onFailure(new IllegalStateException("Cannot accept your own ride request")); return;
-                    }
-                    updates.put("driver", currentUserEmail);
-                    isAcceptingRequest = true;
-                }
-                // Else: Ride is not available for acceptance
-                else {
-                    if (listener != null) listener.onFailure(new IllegalStateException("Ride cannot be accepted")); return;
-                }
+                if (ride.getDriver() != null && !ride.getDriver().trim().isEmpty() && (ride.getRider() == null || ride.getRider().trim().isEmpty())) {
+                    if (Objects.equals(currentUserEmail, ride.getDriver())) { if (listener != null) listener.onFailure(new IllegalStateException("Cannot accept own offer")); return; }
+                    updates.put("rider", currentUserEmail); isAcceptingOffer = true;
+                } else if (ride.getRider() != null && !ride.getRider().trim().isEmpty() && (ride.getDriver() == null || ride.getDriver().trim().isEmpty())) {
+                    if (Objects.equals(currentUserEmail, ride.getRider())) { if (listener != null) listener.onFailure(new IllegalStateException("Cannot accept own request")); return; }
+                    updates.put("driver", currentUserEmail); isAcceptingRequest = true;
+                } else { if (listener != null) listener.onFailure(new IllegalStateException("Ride cannot be accepted")); return; }
 
-                // Perform update
-                Log.d(TAG, "User " + currentUserEmail + " accepting ride " + rideId +
-                        (isAcceptingOffer ? " as RIDER" : "") + (isAcceptingRequest ? " as DRIVER" : ""));
-                rideNodeRef.updateChildren(updates)
-                        .addOnCompleteListener(createWriteCompleteListener(listener, "acceptRide"));
+                Log.d(TAG, "User " + currentUserEmail + " accepting ride " + rideId + (isAcceptingOffer ? " as RIDER" : "") + (isAcceptingRequest ? " as DRIVER" : ""));
+                rideNodeRef.updateChildren(updates).addOnCompleteListener(createWriteCompleteListener(listener, "acceptRide"));
             }
-            @Override public void onCancelled(@NonNull DatabaseError error) {
-                if (listener != null) listener.onFailure(error.toException());
-            }
+            @Override public void onCancelled(@NonNull DatabaseError error) { if (listener != null) listener.onFailure(error.toException()); }
         });
     }
 
@@ -380,29 +363,18 @@ public class RideService {
 
         getRideById(rideId, new RideSingleListener() {
             @Override public void onRideFetched(@Nullable Ride ride) {
-                if (ride == null) {
-                    if (listener != null) listener.onFailure(new Exception("Ride not found")); return;
-                }
-                // Authorization check
+                if (ride == null) { if (listener != null) listener.onFailure(new Exception("Ride not found")); return; }
                 if (!Objects.equals(currentUserEmail, ride.getDriver()) && !Objects.equals(currentUserEmail, ride.getRider())) {
-                    if (listener != null) listener.onFailure(new SecurityException("Not authorized to complete this ride")); return;
+                    if (listener != null) listener.onFailure(new SecurityException("Not authorized")); return;
                 }
-                // Check if already complete
-                if (ride.isComplete()) {
-                    Log.w(TAG, "Ride " + rideId + " is already complete.");
-                    if (listener != null) listener.onSuccess(); // Treat as success if already done
-                    return;
-                }
+                if (ride.isComplete()) { if (listener != null) listener.onSuccess(); return; } // Already done
 
-                // Proceed with completion
                 Map<String, Object> updates = new HashMap<>();
                 updates.put("complete", true);
                 ridesRef.child(String.valueOf(rideId)).updateChildren(updates)
                         .addOnCompleteListener(createWriteCompleteListener(listener, "completeRide"));
             }
-            @Override public void onError(DatabaseError databaseError) {
-                if (listener != null) listener.onFailure(databaseError.toException());
-            }
+            @Override public void onError(DatabaseError databaseError) { if (listener != null) listener.onFailure(databaseError.toException()); }
         });
     }
 
@@ -411,35 +383,20 @@ public class RideService {
     /** Deletes a ride. Requires current user to be driver or rider. */
     public void deleteRide(int rideId, @Nullable CompletionListener listener) {
         String currentUserEmail = getCurrentUserEmail(listener);
-        if (currentUserEmail == null) return; // Not logged in
+        if (currentUserEmail == null) return;
 
         getRideById(rideId, new RideSingleListener() {
             @Override public void onRideFetched(@Nullable Ride ride) {
-                if (ride == null) {
-                    // Ride doesn't exist, consider it a success for deletion? Or failure?
-                    // Let's treat "not found" as success for deletion idempotency.
-                    Log.w(TAG, "deleteRide: Ride " + rideId + " not found, treating as success.");
-                    if (listener != null) listener.onSuccess();
-                    return;
-                }
+                if (ride == null) { if (listener != null) listener.onSuccess(); return; } // Treat not found as success for delete
 
-                // Authorization check: Must be the driver or the rider
                 if (!Objects.equals(currentUserEmail, ride.getDriver()) && !Objects.equals(currentUserEmail, ride.getRider())) {
-                    Log.w(TAG, "User " + currentUserEmail + " not authorized to delete ride " + rideId);
-                    if (listener != null) listener.onFailure(new SecurityException("Not authorized to delete this ride"));
-                    return;
+                    if (listener != null) listener.onFailure(new SecurityException("Not authorized")); return;
                 }
-
-                // Proceed with deletion
                 Log.d(TAG, "User " + currentUserEmail + " deleting ride " + rideId);
                 ridesRef.child(String.valueOf(rideId)).removeValue()
                         .addOnCompleteListener(createWriteCompleteListener(listener, "deleteRide"));
             }
-
-            @Override public void onError(DatabaseError databaseError) {
-                Log.e(TAG, "deleteRide: Error fetching ride " + rideId + " for authorization check.", databaseError.toException());
-                if (listener != null) listener.onFailure(databaseError.toException());
-            }
+            @Override public void onError(DatabaseError databaseError) { if (listener != null) listener.onFailure(databaseError.toException()); }
         });
     }
 }
