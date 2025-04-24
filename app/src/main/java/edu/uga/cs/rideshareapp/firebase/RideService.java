@@ -264,19 +264,26 @@ public class RideService {
     }
 
     /**
-     * Fetches all accepted rides (driver set, rider set, not complete).
+     * Fetches all accepted rides (driver set, rider set, not complete)
+     * involving the currently logged-in user.
      * @param listener Listener to receive the list of accepted rides or error.
      */
     public void getAllAcceptedRides(@NonNull final RideListListener listener) {
+        final String currentUserEmail = getCurrentUserEmailForRead(listener);
+        if (currentUserEmail == null) return; // Not logged in, error handled by helper
+
         // Query by isComplete=false, filter the rest client-side
-        Query query = ridesRef.orderByChild("complete").equalTo(false); // Note: Firebase stores boolean as 'complete'
+        Query query = ridesRef.orderByChild("complete").equalTo(false);
         query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride -> {
-            // Client-side filtering for accepted rides
+            // Client-side filtering for accepted rides involving the current user
             boolean hasDriver = ride.getDriver() != null && !ride.getDriver().trim().isEmpty();
             boolean hasRider = ride.getRider() != null && !ride.getRider().trim().isEmpty();
-            boolean notComplete = !ride.isComplete(); // Should be true from query
-            return hasDriver && hasRider && notComplete;
-        }, "getAllAcceptedRides"));
+            // Check if current user is either the driver or the rider
+            boolean userIsParticipant = Objects.equals(ride.getDriver(), currentUserEmail) || Objects.equals(ride.getRider(), currentUserEmail);
+            boolean notComplete = !ride.isComplete(); // Should be true from query, but good practice
+
+            return hasDriver && hasRider && notComplete && userIsParticipant;
+        }, "getAllAcceptedRides (for current user)"));
     }
 
     // Helper for creating ValueEventListeners for lists

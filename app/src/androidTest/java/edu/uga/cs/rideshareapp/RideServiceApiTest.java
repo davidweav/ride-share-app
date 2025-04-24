@@ -4,6 +4,7 @@ package edu.uga.cs.rideshareapp; // Match your app's package
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry; // If context needed
 import android.content.Context; // If context needed
+import android.util.Log; // Use Android Log for instrumented tests
 
 import org.junit.After;
 import org.junit.Before;
@@ -27,6 +28,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects; // Import Objects
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException; // Import ExecutionException
 import java.util.concurrent.TimeUnit;
@@ -48,10 +50,10 @@ public class RideServiceApiTest {
 
     private RideService rideService;
     private FirebaseAuth mAuth;
-    private static final String TAG = "RideServiceApiTest";
-    private static final int ASYNC_TIMEOUT_SECONDS = 25; // Slightly longer timeout for device tests
+    private static final String TAG = "RideServiceApiTest"; // Use Android Log tag
+    private static final int ASYNC_TIMEOUT_SECONDS = 25; // Generous timeout for device tests
     private static final String TEST_USER_EMAIL = "asr05918@uga.edu";
-    private static final String TEST_USER_PASSWORD = "spaugh11AA@@"; // <<< --- IMPORTANT: SET PASSWORD HERE
+    private static final String TEST_USER_PASSWORD = "YOUR_PASSWORD_HERE"; // <<< --- IMPORTANT: SET PASSWORD HERE
 
     // Shared state for tests (use cautiously) - consider creating fresh data per test
     private static final AtomicInteger lastCreatedRideId = new AtomicInteger(-1);
@@ -59,7 +61,7 @@ public class RideServiceApiTest {
 
     @Before
     public void setUp() throws ExecutionException, InterruptedException, TimeoutException {
-        System.out.println("--- Setting up test ---");
+        Log.i(TAG, "--- Setting up test ---");
         // Context context = InstrumentationRegistry.getInstrumentation().getTargetContext(); // Get context if needed
         mAuth = FirebaseAuth.getInstance();
         rideService = new RideService(); // RideService now uses FirebaseAuth internally
@@ -71,16 +73,16 @@ public class RideServiceApiTest {
     private void signInTestUser() throws ExecutionException, InterruptedException, TimeoutException {
         // Check if already signed in
         if (mAuth.getCurrentUser() != null && TEST_USER_EMAIL.equals(mAuth.getCurrentUser().getEmail())) {
-            System.out.println("User " + TEST_USER_EMAIL + " already signed in.");
+            Log.d(TAG,"User " + TEST_USER_EMAIL + " already signed in.");
             return;
         }
         // Sign out any previous user first
         if (mAuth.getCurrentUser() != null) {
-            System.out.println("Signing out previous user: " + mAuth.getCurrentUser().getEmail());
+            Log.d(TAG,"Signing out previous user: " + mAuth.getCurrentUser().getEmail());
             mAuth.signOut();
         }
 
-        System.out.println("Attempting to sign in user: " + TEST_USER_EMAIL);
+        Log.d(TAG,"Attempting to sign in user: " + TEST_USER_EMAIL);
         if (TEST_USER_PASSWORD.equals("YOUR_PASSWORD_HERE")) {
             fail("!!! Test user password not set in RideServiceApiTest.java !!!");
         }
@@ -92,15 +94,15 @@ public class RideServiceApiTest {
             Tasks.await(signInTask, ASYNC_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
             if (signInTask.isSuccessful()) {
-                System.out.println("Sign in SUCCESSFUL for user: " + TEST_USER_EMAIL);
+                Log.i(TAG,"Sign in SUCCESSFUL for user: " + TEST_USER_EMAIL);
                 assertNotNull("FirebaseUser should not be null after successful sign in", mAuth.getCurrentUser());
                 assertEquals("Signed in user email mismatch", TEST_USER_EMAIL, mAuth.getCurrentUser().getEmail());
             } else {
-                System.err.println("Sign in FAILED: " + signInTask.getException());
+                Log.e(TAG,"Sign in FAILED: " + signInTask.getException());
                 fail("Failed to sign in test user " + TEST_USER_EMAIL + ". Exception: " + signInTask.getException());
             }
         } catch (ExecutionException | InterruptedException | TimeoutException e) {
-            System.err.println("Exception during sign in await: " + e);
+            Log.e(TAG,"Exception during sign in await: " + e);
             fail("Exception while waiting for user sign in: " + e.getMessage());
             throw e; // Re-throw to ensure test setup fails clearly
         }
@@ -109,19 +111,19 @@ public class RideServiceApiTest {
 
     @After
     public void tearDown() {
-        System.out.println("--- Tearing down test ---");
+        Log.i(TAG,"--- Tearing down test ---");
         // Sign out the user after each test for isolation
         if (mAuth.getCurrentUser() != null) {
-            System.out.println("Signing out user: " + mAuth.getCurrentUser().getEmail());
+            Log.d(TAG,"Signing out user: " + mAuth.getCurrentUser().getEmail());
             mAuth.signOut();
         }
     }
 
     // --- Helper Methods for Testing Async Calls ---
     private boolean waitForLatch(CountDownLatch latch, String operation) throws InterruptedException {
-        System.out.println("Waiting for " + operation + " (up to " + ASYNC_TIMEOUT_SECONDS + "s)...");
+        Log.d(TAG,"Waiting for " + operation + " (up to " + ASYNC_TIMEOUT_SECONDS + "s)...");
         boolean completed = latch.await(ASYNC_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        if (!completed) { System.err.println(operation + " timed out!"); }
+        if (!completed) { Log.e(TAG,operation + " timed out!"); }
         return completed;
     }
 
@@ -129,7 +131,7 @@ public class RideServiceApiTest {
 
     @Test
     public void test01_CreateNewRideOffer() throws InterruptedException {
-        System.out.println("\n>>> Testing: Create New Ride Offer <<<");
+        Log.i(TAG,"\n>>> Testing: Create New Ride Offer <<<");
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicBoolean success = new AtomicBoolean(false);
 
@@ -142,15 +144,14 @@ public class RideServiceApiTest {
         rideService.createNewRideWithStrings(dateTime, isDriver, from, to, new RideService.CompletionListener() {
             @Override
             public void onSuccess() {
-                System.out.println("testCreateNewRideOffer: onSuccess (Expected in instrumented test)");
+                Log.d(TAG,"testCreateNewRideOffer: onSuccess (Expected in instrumented test)");
                 // Ideally, capture the created ride ID here if RideService provided it back
                 success.set(true);
                 latch.countDown();
             }
             @Override
             public void onFailure(Exception e) {
-                System.err.println("testCreateNewRideOffer: onFailure (Unexpected in instrumented test): " + e.getMessage());
-                e.printStackTrace(); // Print stack trace for debugging
+                Log.e(TAG,"testCreateNewRideOffer: onFailure (Unexpected in instrumented test)", e);
                 success.set(false);
                 latch.countDown();
                 fail("Create Ride Offer failed: " + e.getMessage()); // Fail the test explicitly
@@ -165,7 +166,7 @@ public class RideServiceApiTest {
 
     @Test
     public void test02_CreateNewRideRequest() throws InterruptedException {
-        System.out.println("\n>>> Testing: Create New Ride Request <<<");
+        Log.i(TAG,"\n>>> Testing: Create New Ride Request <<<");
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicBoolean success = new AtomicBoolean(false);
 
@@ -177,14 +178,13 @@ public class RideServiceApiTest {
         rideService.createNewRideWithStrings(dateTime, isDriver, from, to, new RideService.CompletionListener() {
             @Override
             public void onSuccess() {
-                System.out.println("testCreateNewRideRequest: onSuccess (Expected in instrumented test)");
+                Log.d(TAG,"testCreateNewRideRequest: onSuccess (Expected in instrumented test)");
                 success.set(true);
                 latch.countDown();
             }
             @Override
             public void onFailure(Exception e) {
-                System.err.println("testCreateNewRideRequest: onFailure (Unexpected in instrumented test): " + e.getMessage());
-                e.printStackTrace();
+                Log.e(TAG,"testCreateNewRideRequest: onFailure (Unexpected in instrumented test)", e);
                 success.set(false);
                 latch.countDown();
                 fail("Create Ride Request failed: " + e.getMessage());
@@ -195,22 +195,174 @@ public class RideServiceApiTest {
         assertTrue("Create Request operation failed.", success.get());
     }
 
-    // --- Read tests remain largely the same ---
+    // --- Read tests updated for excludeCurrentUser flag ---
 
     @Test
-    public void test03_GetAllRideOffers() throws InterruptedException {
-        System.out.println("\n>>> Testing: Get All Ride Offers <<<");
+    public void test03_GetAllRideOffers_ExcludeUser() throws InterruptedException {
+        Log.i(TAG,"\n>>> Testing: Get All Ride Offers (Excluding Current User) <<<");
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicBoolean success = new AtomicBoolean(false);
 
-        rideService.getAllRideOffers(new RideService.RideListListener() {
+        // Call with excludeCurrentUser = true
+        rideService.getAllRideOffers(true, new RideService.RideListListener() {
             @Override
             public void onRidesFetched(List<Ride> rides) {
-                System.out.println("GetAllRideOffers: Success - Fetched " + rides.size() + " offers.");
+                Log.d(TAG,"GetAllRideOffers_ExcludeUser: Success - Fetched " + rides.size() + " offers.");
                 assertNotNull("Offers list should not be null", rides);
                 for (Ride ride : rides) {
+                    Log.d(TAG,"  Offer (Exclude): ID=" + ride.getRideId() + ", Driver=" + ride.getDriver());
                     assertNotNull(ride.getDriver());
                     assertNull(ride.getRider());
+                    assertFalse(ride.isComplete());
+                    // Assert that the driver is NOT the current test user
+                    assertNotEquals("Ride offer should not be from the current user", TEST_USER_EMAIL, ride.getDriver());
+                }
+                success.set(true);
+                latch.countDown();
+            }
+            @Override
+            public void onError(DatabaseError databaseError) {
+                Log.e(TAG,"GetAllRideOffers_ExcludeUser: Error - " + databaseError.getMessage(), databaseError.toException());
+                success.set(false);
+                latch.countDown();
+                fail("GetAllRideOffers(exclude=true) failed: " + databaseError.getMessage());
+            }
+        });
+
+        assertTrue("Get Offers (Exclude) callback did not complete in time.", waitForLatch(latch, "Get Offers (Exclude)"));
+        assertTrue("Get Offers (Exclude) operation failed (check logs).", success.get());
+    }
+
+    @Test
+    public void test03b_GetAllRideOffers_IncludeUser() throws InterruptedException {
+        Log.i(TAG,"\n>>> Testing: Get All Ride Offers (Including Current User) <<<");
+        final CountDownLatch latch = new CountDownLatch(1);
+        final AtomicBoolean success = new AtomicBoolean(false);
+        final AtomicBoolean foundOwnOffer = new AtomicBoolean(false); // Flag to check if we find an offer by the test user
+
+        // Call with excludeCurrentUser = false
+        rideService.getAllRideOffers(false, new RideService.RideListListener() {
+            @Override
+            public void onRidesFetched(List<Ride> rides) {
+                Log.d(TAG,"GetAllRideOffers_IncludeUser: Success - Fetched " + rides.size() + " offers.");
+                assertNotNull("Offers list should not be null", rides);
+                for (Ride ride : rides) {
+                    Log.d(TAG,"  Offer (Include): ID=" + ride.getRideId() + ", Driver=" + ride.getDriver());
+                    assertNotNull(ride.getDriver());
+                    assertNull(ride.getRider());
+                    assertFalse(ride.isComplete());
+                    if (Objects.equals(TEST_USER_EMAIL, ride.getDriver())) {
+                        foundOwnOffer.set(true); // Mark if we found one by the current user
+                    }
+                }
+                // This assertion depends on whether test01 actually created an offer successfully
+                // assertTrue("Expected to find at least one offer by the current user", foundOwnOffer.get());
+                Log.d(TAG,"Found own offer: " + foundOwnOffer.get()); // Log whether own offer was found
+                success.set(true);
+                latch.countDown();
+            }
+            @Override
+            public void onError(DatabaseError databaseError) {
+                Log.e(TAG,"GetAllRideOffers_IncludeUser: Error - " + databaseError.getMessage(), databaseError.toException());
+                success.set(false);
+                latch.countDown();
+                fail("GetAllRideOffers(exclude=false) failed: " + databaseError.getMessage());
+            }
+        });
+
+        assertTrue("Get Offers (Include) callback did not complete in time.", waitForLatch(latch, "Get Offers (Include)"));
+        assertTrue("Get Offers (Include) operation failed (check logs).", success.get());
+    }
+
+    @Test
+    public void test04_GetAllRideRequests_ExcludeUser() throws InterruptedException {
+        Log.i(TAG,"\n>>> Testing: Get All Ride Requests (Excluding Current User) <<<");
+        final CountDownLatch latch = new CountDownLatch(1);
+        final AtomicBoolean success = new AtomicBoolean(false);
+
+        // Call with excludeCurrentUser = true
+        rideService.getAllRideRequests(true, new RideService.RideListListener() {
+            @Override
+            public void onRidesFetched(List<Ride> rides) {
+                Log.d(TAG,"GetAllRideRequests_ExcludeUser: Success - Fetched " + rides.size() + " requests.");
+                assertNotNull("Requests list should not be null", rides);
+                for (Ride ride : rides) {
+                    Log.d(TAG,"  Request (Exclude): ID=" + ride.getRideId() + ", Rider=" + ride.getRider());
+                    assertNotNull(ride.getRider());
+                    assertNull(ride.getDriver());
+                    assertFalse(ride.isComplete());
+                    // Assert that the rider is NOT the current test user
+                    assertNotEquals("Ride request should not be from the current user", TEST_USER_EMAIL, ride.getRider());
+                }
+                success.set(true);
+                latch.countDown();
+            }
+            @Override
+            public void onError(DatabaseError databaseError) {
+                Log.e(TAG,"GetAllRideRequests_ExcludeUser: Error - " + databaseError.getMessage(), databaseError.toException());
+                success.set(false);
+                latch.countDown();
+                fail("GetAllRideRequests(exclude=true) failed: " + databaseError.getMessage());
+            }
+        });
+
+        assertTrue("Get Requests (Exclude) callback did not complete in time.", waitForLatch(latch, "Get Requests (Exclude)"));
+        assertTrue("Get Requests (Exclude) operation failed.", success.get());
+    }
+
+    @Test
+    public void test04b_GetAllRideRequests_IncludeUser() throws InterruptedException {
+        Log.i(TAG,"\n>>> Testing: Get All Ride Requests (Including Current User) <<<");
+        final CountDownLatch latch = new CountDownLatch(1);
+        final AtomicBoolean success = new AtomicBoolean(false);
+        final AtomicBoolean foundOwnRequest = new AtomicBoolean(false);
+
+        // Call with excludeCurrentUser = false
+        rideService.getAllRideRequests(false, new RideService.RideListListener() {
+            @Override
+            public void onRidesFetched(List<Ride> rides) {
+                Log.d(TAG,"GetAllRideRequests_IncludeUser: Success - Fetched " + rides.size() + " requests.");
+                assertNotNull("Requests list should not be null", rides);
+                for (Ride ride : rides) {
+                    Log.d(TAG,"  Request (Include): ID=" + ride.getRideId() + ", Rider=" + ride.getRider());
+                    assertNotNull(ride.getRider());
+                    assertNull(ride.getDriver());
+                    assertFalse(ride.isComplete());
+                    if (Objects.equals(TEST_USER_EMAIL, ride.getRider())) {
+                        foundOwnRequest.set(true);
+                    }
+                }
+                // assertTrue("Expected to find at least one request by the current user", foundOwnRequest.get());
+                Log.d(TAG,"Found own request: " + foundOwnRequest.get());
+                success.set(true);
+                latch.countDown();
+            }
+            @Override
+            public void onError(DatabaseError databaseError) {
+                Log.e(TAG,"GetAllRideRequests_IncludeUser: Error - " + databaseError.getMessage(), databaseError.toException());
+                success.set(false);
+                latch.countDown();
+                fail("GetAllRideRequests(exclude=false) failed: " + databaseError.getMessage());
+            }
+        });
+
+        assertTrue("Get Requests (Include) callback did not complete in time.", waitForLatch(latch, "Get Requests (Include)"));
+        assertTrue("Get Requests (Include) operation failed.", success.get());
+    }
+
+    @Test
+    public void test05_GetAllAcceptedRides() throws InterruptedException {
+        Log.i(TAG,"\n>>> Testing: Get All Accepted Rides <<<");
+        final CountDownLatch latch = new CountDownLatch(1);
+        final AtomicBoolean success = new AtomicBoolean(false);
+        rideService.getAllAcceptedRides(new RideService.RideListListener() {
+            @Override
+            public void onRidesFetched(List<Ride> rides) {
+                Log.d(TAG,"GetAllAcceptedRides: Success - Fetched " + rides.size() + " accepted rides.");
+                assertNotNull(rides);
+                for (Ride ride : rides) {
+                    assertNotNull(ride.getDriver());
+                    assertNotNull(ride.getRider());
                     assertFalse(ride.isComplete());
                 }
                 success.set(true);
@@ -218,62 +370,7 @@ public class RideServiceApiTest {
             }
             @Override
             public void onError(DatabaseError databaseError) {
-                System.err.println("GetAllRideOffers: Error - " + databaseError.getMessage());
-                success.set(false);
-                latch.countDown();
-                fail("GetAllRideOffers failed: " + databaseError.getMessage());
-            }
-        });
-
-        assertTrue("Get Offers callback did not complete in time.", waitForLatch(latch, "Get Offers"));
-        assertTrue("Get Offers operation failed (check logs).", success.get());
-    }
-
-    // ... (test04_GetAllRideRequests, test05_GetAllAcceptedRides, test06_GetRideById_NotFound remain similar) ...
-    @Test
-    public void test04_GetAllRideRequests() throws InterruptedException {
-        // ... (Similar structure to test03_GetAllRideOffers) ...
-        System.out.println("\n>>> Testing: Get All Ride Requests <<<");
-        final CountDownLatch latch = new CountDownLatch(1);
-        final AtomicBoolean success = new AtomicBoolean(false);
-
-        rideService.getAllRideRequests(new RideService.RideListListener() {
-            @Override
-            public void onRidesFetched(List<Ride> rides) {
-                System.out.println("GetAllRideRequests: Success - Fetched " + rides.size() + " requests.");
-                assertNotNull(rides);
-                success.set(true);
-                latch.countDown();
-            }
-            @Override
-            public void onError(DatabaseError databaseError) {
-                System.err.println("GetAllRideRequests: Error - " + databaseError.getMessage());
-                success.set(false);
-                latch.countDown();
-                fail("GetAllRideRequests failed: " + databaseError.getMessage());
-            }
-        });
-        assertTrue("Get Requests callback timed out", waitForLatch(latch, "Get Requests"));
-        assertTrue("Get Requests failed", success.get());
-    }
-
-    @Test
-    public void test05_GetAllAcceptedRides() throws InterruptedException {
-        // ... (Similar structure to test03_GetAllRideOffers) ...
-        System.out.println("\n>>> Testing: Get All Accepted Rides <<<");
-        final CountDownLatch latch = new CountDownLatch(1);
-        final AtomicBoolean success = new AtomicBoolean(false);
-        rideService.getAllAcceptedRides(new RideService.RideListListener() {
-            @Override
-            public void onRidesFetched(List<Ride> rides) {
-                System.out.println("GetAllAcceptedRides: Success - Fetched " + rides.size() + " accepted rides.");
-                assertNotNull(rides);
-                success.set(true);
-                latch.countDown();
-            }
-            @Override
-            public void onError(DatabaseError databaseError) {
-                System.err.println("GetAllAcceptedRides: Error - " + databaseError.getMessage());
+                Log.e(TAG,"GetAllAcceptedRides: Error - " + databaseError.getMessage(), databaseError.toException());
                 success.set(false);
                 latch.countDown();
                 fail("GetAllAcceptedRides failed: " + databaseError.getMessage());
@@ -285,8 +382,7 @@ public class RideServiceApiTest {
 
     @Test
     public void test06_GetRideById_NotFound() throws InterruptedException {
-        // ... (Similar structure to test03_GetAllRideOffers) ...
-        System.out.println("\n>>> Testing: Get Ride By ID (Not Found) <<<");
+        Log.i(TAG,"\n>>> Testing: Get Ride By ID (Not Found) <<<");
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicBoolean success = new AtomicBoolean(false);
         rideService.getRideById(-9999, new RideService.RideSingleListener() {
@@ -298,7 +394,7 @@ public class RideServiceApiTest {
             }
             @Override
             public void onError(DatabaseError databaseError) {
-                System.err.println("GetRideById_NotFound: Error - " + databaseError.getMessage());
+                Log.e(TAG,"GetRideById_NotFound: Error - " + databaseError.getMessage(), databaseError.toException());
                 success.set(false);
                 latch.countDown();
                 fail("GetRideById_NotFound failed: " + databaseError.getMessage());
@@ -313,26 +409,25 @@ public class RideServiceApiTest {
 
     @Test
     public void test10_AcceptRide() throws InterruptedException {
-        System.out.println("\n>>> Testing: Accept Ride <<<");
+        Log.i(TAG,"\n>>> Testing: Accept Ride <<<");
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicBoolean success = new AtomicBoolean(false);
         // !!! IMPORTANT: Replace with an ID of a ride OFFER/REQUEST created by a DIFFERENT user !!!
         // !!! Or create one specifically for this test in @Before or a preceding test !!!
-        int rideIdToAccept = 10; // <<< --- FIND/CREATE A VALID ID FOR THIS
+        int rideIdToAccept = 1; // <<< --- FIND/CREATE A VALID ID FOR THIS
 
-        System.out.println("Attempting to accept ride ID: " + rideIdToAccept);
+        Log.d(TAG,"Attempting to accept ride ID: " + rideIdToAccept);
 
         rideService.acceptRide(rideIdToAccept, new RideService.CompletionListener() {
             @Override
             public void onSuccess() {
-                System.out.println("AcceptRide: onSuccess (Expected in instrumented test)");
+                Log.d(TAG,"AcceptRide: onSuccess (Expected in instrumented test)");
                 success.set(true);
                 latch.countDown();
             }
             @Override
             public void onFailure(Exception e) {
-                System.err.println("AcceptRide: onFailure (Unexpected if ride " + rideIdToAccept + " exists and is acceptable): " + e.getMessage());
-                e.printStackTrace();
+                Log.e(TAG,"AcceptRide: onFailure (Unexpected if ride " + rideIdToAccept + " exists and is acceptable)", e);
                 success.set(false);
                 latch.countDown();
                 fail("Accept Ride failed: " + e.getMessage());
@@ -346,25 +441,24 @@ public class RideServiceApiTest {
 
     @Test
     public void test11_CompleteRide() throws InterruptedException {
-        System.out.println("\n>>> Testing: Complete Ride <<<");
+        Log.i(TAG,"\n>>> Testing: Complete Ride <<<");
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicBoolean success = new AtomicBoolean(false);
         // !!! IMPORTANT: Replace with an ID of an ACCEPTED ride involving TEST_USER_EMAIL !!!
         int rideIdToComplete = 1; // <<< --- FIND/CREATE A VALID ID FOR THIS
 
-        System.out.println("Attempting to complete ride ID: " + rideIdToComplete);
+        Log.d(TAG,"Attempting to complete ride ID: " + rideIdToComplete);
 
         rideService.completeRide(rideIdToComplete, new RideService.CompletionListener() {
             @Override
             public void onSuccess() {
-                System.out.println("CompleteRide: onSuccess (Expected)");
+                Log.d(TAG,"CompleteRide: onSuccess (Expected)");
                 success.set(true);
                 latch.countDown();
             }
             @Override
             public void onFailure(Exception e) {
-                System.err.println("CompleteRide: onFailure (Unexpected if ride " + rideIdToComplete + " exists and user is involved): " + e.getMessage());
-                e.printStackTrace();
+                Log.e(TAG,"CompleteRide: onFailure (Unexpected if ride " + rideIdToComplete + " exists and user is involved)", e);
                 success.set(false);
                 latch.countDown();
                 fail("Complete Ride failed: " + e.getMessage());
@@ -378,26 +472,25 @@ public class RideServiceApiTest {
 
     @Test
     public void test12_DeleteRide() throws InterruptedException {
-        System.out.println("\n>>> Testing: Delete Ride <<<");
+        Log.i(TAG,"\n>>> Testing: Delete Ride <<<");
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicBoolean success = new AtomicBoolean(false);
         // !!! IMPORTANT: Replace with an ID of a ride involving TEST_USER_EMAIL !!!
         // !!! Be careful, this permanently deletes data !!!
         int rideIdToDelete = 3; // <<< --- FIND/CREATE A VALID ID FOR THIS (Maybe create in test01/02 and store ID?)
 
-        System.out.println("Attempting to delete ride ID: " + rideIdToDelete);
+        Log.d(TAG,"Attempting to delete ride ID: " + rideIdToDelete);
 
         rideService.deleteRide(rideIdToDelete, new RideService.CompletionListener() {
             @Override
             public void onSuccess() {
-                System.out.println("DeleteRide: onSuccess (Expected)");
+                Log.d(TAG,"DeleteRide: onSuccess (Expected)");
                 success.set(true);
                 latch.countDown();
             }
             @Override
             public void onFailure(Exception e) {
-                System.err.println("DeleteRide: onFailure (Unexpected if ride " + rideIdToDelete + " exists and user is involved): " + e.getMessage());
-                e.printStackTrace();
+                Log.e(TAG,"DeleteRide: onFailure (Unexpected if ride " + rideIdToDelete + " exists and user is involved)", e);
                 success.set(false);
                 latch.countDown();
                 fail("Delete Ride failed: " + e.getMessage());
