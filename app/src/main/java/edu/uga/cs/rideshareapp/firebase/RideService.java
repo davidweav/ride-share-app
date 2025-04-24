@@ -154,10 +154,16 @@ public class RideService {
 
     /** Creates a new ride entry using an auto-incrementing ID. */
     public void createNewRide(final Ride ride, @Nullable final CompletionListener listener) {
-        if (ride == null) { /* ... */ return; }
+        if (ride == null) { if (listener != null) listener.onFailure(new IllegalArgumentException("Ride cannot be null")); return; }
         String currentUserEmail = getCurrentUserEmail(listener);
         if (currentUserEmail == null) return;
-        // ... (Authorization checks) ...
+        // Authorization checks...
+        if (ride.getDriver() != null && !ride.getDriver().isEmpty() && !ride.getDriver().equals(currentUserEmail)) {
+            if (listener != null) listener.onFailure(new SecurityException("Cannot create ride offer for another user")); return;
+        }
+        if (ride.getRider() != null && !ride.getRider().isEmpty() && !ride.getRider().equals(currentUserEmail)) {
+            if (listener != null) listener.onFailure(new SecurityException("Cannot create ride request for another user")); return;
+        }
 
         counterRef.runTransaction(new Transaction.Handler() {
             @NonNull @Override
@@ -210,40 +216,50 @@ public class RideService {
     }
 
     /**
-     * Fetches all ride offers (driver set, rider null, not complete) NOT posted by the current user.
+     * Fetches ride offers (driver set, rider null, not complete).
+     * @param excludeCurrentUser If true, excludes offers posted by the current user.
      * @param listener Listener to receive the list of offers or error.
      */
-    public void getAllRideOffers(@NonNull final RideListListener listener) {
-        final String currentUserEmail = getCurrentUserEmailForRead(listener);
-        if (currentUserEmail == null) return; // Error handled in helper
+    public void getAllRideOffers(boolean excludeCurrentUser, @NonNull final RideListListener listener) {
+        final String currentUserEmail = excludeCurrentUser ? getCurrentUserEmailForRead(listener) : null;
+        // If excluding user and user isn't logged in/email missing, the helper calls onError and returns null
+        if (excludeCurrentUser && currentUserEmail == null) return;
 
         Query query = ridesRef.orderByChild("rider").equalTo(null);
         query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride -> {
-            // Additional client-side filtering for offers, excluding user's own offers
+            // Base criteria for an offer
             boolean hasDriver = ride.getDriver() != null && !ride.getDriver().trim().isEmpty();
-            boolean notOwnOffer = !Objects.equals(ride.getDriver(), currentUserEmail); // Exclude own offers
-            boolean noRider = ride.getRider() == null || ride.getRider().trim().isEmpty(); // Redundant check
+            boolean noRider = ride.getRider() == null || ride.getRider().trim().isEmpty();
             boolean notComplete = !ride.isComplete();
-            return hasDriver && noRider && notComplete && notOwnOffer;
+
+            // Apply exclusion filter if requested
+            boolean shouldExclude = excludeCurrentUser && Objects.equals(ride.getDriver(), currentUserEmail);
+
+            return hasDriver && noRider && notComplete && !shouldExclude;
         }, "getAllRideOffers"));
     }
 
     /**
-     * Fetches all ride requests (rider set, driver null, not complete) NOT posted by the current user.
+     * Fetches ride requests (rider set, driver null, not complete).
+     * @param excludeCurrentUser If true, excludes requests posted by the current user.
      * @param listener Listener to receive the list of requests or error.
      */
-    public void getAllRideRequests(@NonNull final RideListListener listener) {
-        final String currentUserEmail = getCurrentUserEmailForRead(listener);
-        if (currentUserEmail == null) return; // Error handled in helper
+    public void getAllRideRequests(boolean excludeCurrentUser, @NonNull final RideListListener listener) {
+        final String currentUserEmail = excludeCurrentUser ? getCurrentUserEmailForRead(listener) : null;
+        // If excluding user and user isn't logged in/email missing, the helper calls onError and returns null
+        if (excludeCurrentUser && currentUserEmail == null) return;
 
         Query query = ridesRef.orderByChild("driver").equalTo(null);
         query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride -> {
-            // Additional client-side filtering for requests, excluding user's own requests
+            // Base criteria for a request
             boolean hasRider = ride.getRider() != null && !ride.getRider().trim().isEmpty();
-            boolean notOwnRequest = !Objects.equals(ride.getRider(), currentUserEmail); // Exclude own requests
-            boolean noDriver = ride.getDriver() == null || ride.getDriver().trim().isEmpty(); // Redundant check
+            boolean noDriver = ride.getDriver() == null || ride.getDriver().trim().isEmpty();
             boolean notComplete = !ride.isComplete();
-            return hasRider && noDriver && notComplete && notOwnRequest;
+
+            // Apply exclusion filter if requested
+            boolean shouldExclude = excludeCurrentUser && Objects.equals(ride.getRider(), currentUserEmail);
+
+            return hasRider && noDriver && notComplete && !shouldExclude;
         }, "getAllRideRequests"));
     }
 
