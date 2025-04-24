@@ -1,21 +1,23 @@
 package edu.uga.cs.rideshareapp.firebase;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable; // Import Nullable
 
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.OnCompleteListener; // Import OnCompleteListener
+import com.google.android.gms.tasks.Task; // Import Task
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.MutableData;
-import com.google.firebase.database.Query; // Import Query
+import com.google.firebase.database.Query;
 import com.google.firebase.database.Transaction;
-// Corrected import statement below:
 import com.google.firebase.database.ValueEventListener;
 
-import java.util.ArrayList; // Import ArrayList
-import java.util.List; // Import List
+import java.util.ArrayList;
+import java.util.HashMap; // Import HashMap
+import java.util.List;
+import java.util.Map; // Import Map
 
 import edu.uga.cs.rideshareapp.model.Ride;
 import android.util.Log;
@@ -27,93 +29,124 @@ public class RideService {
     private final DatabaseReference counterRef;
     private static final String TAG = "RideService";
 
-    // Define the callback interface (can be outside the class too)
+    // --- Callback Interfaces ---
+
+    /** Listener for asynchronous fetch operations returning a list of rides. */
     public interface RideListListener {
-        void onRidesFetched(List<Ride> rideOffers);
+        void onRidesFetched(List<Ride> rides);
         void onError(DatabaseError databaseError);
     }
 
+    /** Listener for asynchronous fetch operations returning a single ride. */
+    public interface RideSingleListener {
+        void onRideFetched(@Nullable Ride ride); // Ride can be null if not found
+        void onError(DatabaseError databaseError);
+    }
+
+    /** Listener for asynchronous write/update/delete operations. */
+    public interface CompletionListener {
+        void onSuccess();
+        void onFailure(Exception e);
+    }
+
+    // --- Constructor ---
+
     public RideService() {
         FirebaseDatabase database = FirebaseDatabase.getInstance();
-        dbRootRef = database.getReference();
+        dbRootRef = database.getReference(); // Not strictly needed unless transactions span multiple nodes
         ridesRef = database.getReference("rides");
         counterRef = database.getReference("counters/lastRideId");
     }
 
+    // --- Helper Methods ---
+
+    /**
+     * Helper method to safely parse the snapshot key and set the rideId on the Ride object.
+     * @param ride The Ride object to update.
+     * @param rideKey The key (String) obtained from the DataSnapshot.
+     */
+    private void setRideIdFromKey(Ride ride, String rideKey) {
+        if (ride == null || rideKey == null) return;
+        try {
+            int id = Integer.parseInt(rideKey);
+            ride.setRideId(id);
+        } catch (NumberFormatException nfe) {
+            Log.w(TAG, "Could not parse ride key to int: " + rideKey + ". Ride object ID remains: " + ride.getRideId());
+        }
+    }
+
+    /**
+     * Creates a standard OnCompleteListener for write operations to call our CompletionListener.
+     * @param listener The CompletionListener to notify.
+     * @param operationTag A tag for logging (e.g., "deleteRide", "updateRide").
+     * @return An OnCompleteListener instance.
+     */
+    private OnCompleteListener<Void> createWriteCompleteListener(final CompletionListener listener, final String operationTag) {
+        return task -> {
+            if (listener != null) {
+                if (task.isSuccessful()) {
+                    Log.d(TAG, operationTag + " successful.");
+                    listener.onSuccess();
+                } else {
+                    Log.e(TAG, operationTag + " failed.", task.getException());
+                    listener.onFailure(task.getException() != null ? task.getException() : new Exception(operationTag + " failed with unknown error"));
+                }
+            } else {
+                // Log even if no listener provided
+                if (task.isSuccessful()) {
+                    Log.d(TAG, operationTag + " successful (no listener).");
+                } else {
+                    Log.e(TAG, operationTag + " failed (no listener).", task.getException());
+                }
+            }
+        };
+    }
+
+    // --- Create Operations ---
+
     /**
      * Creates a new ride entry using an auto-incrementing integer ID.
      * Uses a Firebase Transaction to safely get the next ID.
+     * Notifies listener upon completion of saving the ride data.
      *
      * @param ride The Ride object containing the data (rideId will be set here).
+     * @param listener Optional listener to be notified of success/failure of the final save.
      */
-    public void createNewRide(final Ride ride) {
+    public void createNewRide(final Ride ride, @Nullable final CompletionListener listener) {
         if (ride == null) {
             Log.e(TAG, "Cannot create a null ride.");
+            if (listener != null) listener.onFailure(new IllegalArgumentException("Ride cannot be null"));
             return;
         }
 
-        // Run a transaction on the counter node
         counterRef.runTransaction(new Transaction.Handler() {
-            @NonNull
-            @Override
+            @NonNull @Override
             public Transaction.Result doTransaction(@NonNull MutableData mutableData) {
                 Integer currentValue = mutableData.getValue(Integer.class);
-                if (currentValue == null) {
-                    // Initialize counter if it doesn't exist (should be done manually first ideally)
-                    currentValue = 0;
-                }
-
-                // Increment the counter
-                int nextId = currentValue + 1;
-                mutableData.setValue(nextId); // Set the new counter value
-
-                // *** Store the nextId to be used outside the transaction ***
-                // We pass it back via Transaction.success(mutableData) and retrieve it in onComplete
+                mutableData.setValue((currentValue == null ? 0 : currentValue) + 1);
                 return Transaction.success(mutableData);
             }
 
             @Override
-            public void onComplete(DatabaseError databaseError, boolean committed, DataSnapshot dataSnapshot) {
-                if (databaseError != null) {
-                    // Transaction failed (e.g., network error)
-                    Log.e(TAG, "Counter transaction failed.", databaseError.toException());
-                    // Optionally: Add a callback or listener to notify caller of failure
-                } else if (committed) {
-                    // Transaction completed successfully
-                    Integer newId = dataSnapshot.getValue(Integer.class);
+            public void onComplete(@Nullable DatabaseError error, boolean committed, @Nullable DataSnapshot currentData) {
+                if (error != null) {
+                    Log.e(TAG, "Counter transaction failed.", error.toException());
+                    if (listener != null) listener.onFailure(error.toException());
+                } else if (committed && currentData != null) {
+                    Integer newId = currentData.getValue(Integer.class);
                     if (newId != null) {
                         Log.d(TAG, "Successfully obtained new ride ID: " + newId);
-
-                        // Set the obtained ID on the ride object
-                        ride.setRideId(newId);
-
-                        // Now save the actual ride data under /rides/{newId}
-                        // Use the integer ID as the key for the ride node
+                        ride.setRideId(newId); // Set ID on the object
+                        // Save the ride data, passing the listener to the completion handler
                         ridesRef.child(String.valueOf(newId)).setValue(ride)
-                                .addOnSuccessListener(new OnSuccessListener<Void>() {
-                                    @Override
-                                    public void onSuccess(Void aVoid) {
-                                        Log.d(TAG, "New ride created successfully with ID: " + newId);
-                                        // Optionally: Add callback/listener for success
-                                    }
-                                })
-                                .addOnFailureListener(new OnFailureListener() {
-                                    @Override
-                                    public void onFailure(@NonNull Exception e) {
-                                        Log.e(TAG, "Error creating new ride data for ID: " + newId, e);
-                                        // Optionally: Add callback/listener for failure
-                                        // Consider if you need to roll back the counter (complex)
-                                    }
-                                });
+                                .addOnCompleteListener(createWriteCompleteListener(listener, "createNewRide (setValue)"));
                     } else {
-                        Log.e(TAG, "Failed to retrieve new ID after transaction commit, dataSnapshot is null or not an Integer.");
+                        Log.e(TAG, "Failed to retrieve new ID after transaction commit.");
+                        if (listener != null) listener.onFailure(new Exception("Failed to retrieve new ID after transaction commit"));
                     }
-
                 } else {
-                    // Transaction not committed (e.g., data changed unexpectedly during transaction)
-                    // Firebase automatically retries, so this usually indicates persistent issues
                     Log.w(TAG, "Counter transaction not committed.");
-                    // Optionally: Add a callback or listener to notify caller of failure
+                    if (listener != null) listener.onFailure(new Exception("Counter transaction not committed"));
                 }
             }
         });
@@ -127,131 +160,259 @@ public class RideService {
      * @param isDriver   True if the user is the driver, false if they are the rider.
      * @param from       Starting location.
      * @param to         Destination location.
+     * @param listener   Optional listener for completion status of the save operation.
      */
-    public void createNewRideWithStrings(String dateTime, String user, boolean isDriver, String from, String to) {
-        // Basic input validation
+    public void createNewRideWithStrings(String dateTime, String user, boolean isDriver, String from, String to, @Nullable CompletionListener listener) {
         if (dateTime == null || user == null || from == null || to == null ||
                 dateTime.isEmpty() || user.isEmpty() || from.isEmpty() || to.isEmpty()) {
             Log.e(TAG, "Invalid input provided for creating a ride.");
-            // Optionally: Throw an exception or use a callback for error
+            if (listener != null) listener.onFailure(new IllegalArgumentException("Invalid input for createNewRideWithStrings"));
             return;
         }
 
         Ride ride;
         try {
-            // Construct the Ride object based on whether the user is a driver or rider
-            // Initialize rideId with a placeholder (e.g., 0 or -1) as it will be set during save
+            // Initialize rideId with 0; it will be set by createNewRide
             if (isDriver) {
-                // User is the driver, rider is initially unknown/null
-                ride = new Ride(dateTime, user, null, to, from, false, 0); // Corrected constructor call order & default ID
+                ride = new Ride(dateTime, user, null, to, from, false, 0);
             } else {
-                // User is the rider, driver is initially unknown/null
-                ride = new Ride(dateTime, null, user, to, from, false, 0); // Corrected constructor call order & default ID
+                ride = new Ride(dateTime, null, user, to, from, false, 0);
             }
-
-            // Call the main createNewRide method which handles ID generation and saving
-            createNewRide(ride);
-
+            createNewRide(ride, listener); // Pass the listener along
         } catch (Exception e) {
-            // Catch potential exceptions during Ride object creation, though unlikely here
             Log.e(TAG, "Error preparing ride object", e);
-            // Optionally: Use a callback for error
+            if (listener != null) listener.onFailure(e);
         }
     }
 
+    // --- Read Operations ---
 
     /**
-     * Fetches all ride offers asynchronously.
-     * A ride offer is defined as a ride that:
-     * 1. Has a non-null/non-empty driver.
-     * 2. Has a null or empty rider.
-     * 3. Is not marked as complete (isComplete is false).
-     * Results are returned via the provided listener.
-     *
-     * @param listener The callback listener to handle results or errors.
+     * Fetches a single ride by its ID.
+     * @param rideId The ID of the ride to fetch.
+     * @param listener Listener to receive the ride or error.
      */
-    public void getAllRideOffers(final RideListListener listener) {
-        if (listener == null) {
-            Log.e(TAG, "Listener cannot be null for getAllRideOffers.");
-            return;
-        }
-
-        // Query rides where the 'rider' field is null.
-        // Firebase queries are best suited for exact matches or ranges on indexed fields.
-        // Checking for non-empty driver and isComplete=false will be done client-side after fetching.
-        Query query = ridesRef.orderByChild("rider").equalTo(null);
-
-        query.addListenerForSingleValueEvent(new ValueEventListener() {
+    public void getRideById(int rideId, @NonNull final RideSingleListener listener) {
+        ridesRef.child(String.valueOf(rideId)).addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
-            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
-                List<Ride> rideOffers = new ArrayList<>();
-                Log.d(TAG, "getAllRideOffers: onDataChange triggered. Processing " + dataSnapshot.getChildrenCount() + " potential rides.");
-
-                for (DataSnapshot snapshot : dataSnapshot.getChildren()) {
-                    try {
-                        Ride ride = snapshot.getValue(Ride.class);
-
-                        if (ride != null) {
-                            // Log the raw ride data fetched by the query
-                            // Log.v(TAG, "Processing ride: " + ride.toString());
-
-                            // Apply the specific criteria for a "ride offer"
-                            boolean hasDriver = ride.getDriver() != null && !ride.getDriver().trim().isEmpty();
-                            // Rider check should be redundant due to query, but good for safety
-                            boolean noRider = ride.getRider() == null || ride.getRider().trim().isEmpty();
-                            boolean notComplete = !ride.isComplete();
-
-                            if (hasDriver && noRider && notComplete) {
-                                // Ensure the rideId (which is the Firebase key) is set in the object
-                                // The key might not be automatically populated inside the object by getValue()
-                                // if it wasn't explicitly saved there. Let's set it from the snapshot key.
-                                try {
-                                    // Get the key from the snapshot (e.g., "1", "2")
-                                    String rideKey = snapshot.getKey();
-                                    if (rideKey != null) {
-                                        int rideId = Integer.parseInt(rideKey);
-                                        ride.setRideId(rideId); // Set the ID from the key
-                                    } else {
-                                        Log.w(TAG, "Snapshot key was null when trying to set rideId.");
-                                    }
-                                } catch (NumberFormatException nfe) {
-                                    Log.w(TAG, "Could not parse ride key to int: " + snapshot.getKey());
-                                    // Decide how to handle - skip? log? Keep the potentially incorrect ID from DB?
-                                    // Let's keep the ID from the DB if parsing fails, but log it.
-                                    if (ride.getRideId() == 0 && snapshot.getKey() != null) {
-                                        Log.w(TAG,"Ride object has ID 0, key is: " + snapshot.getKey());
-                                    }
-                                }
-
-
-                                rideOffers.add(ride);
-                                // Log.d(TAG, "Added ride offer: ID " + ride.getRideId());
-                            } else {
-                                // Log why a ride fetched by the query was filtered out
-                                // Log.v(TAG, "Filtered out ride ID " + snapshot.getKey() + ": hasDriver=" + hasDriver + ", noRider=" + noRider + ", notComplete=" + notComplete);
-                            }
-                        } else {
-                            Log.w(TAG, "Fetched null Ride object for key: " + snapshot.getKey());
-                        }
-                    } catch (Exception e) {
-                        // Catch potential errors during getValue or processing
-                        Log.e(TAG, "Error processing ride snapshot: " + snapshot.getKey(), e);
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (snapshot.exists()) {
+                    Ride ride = snapshot.getValue(Ride.class);
+                    if (ride != null) {
+                        setRideIdFromKey(ride, snapshot.getKey()); // Ensure ID is set
                     }
+                    listener.onRideFetched(ride);
+                } else {
+                    Log.d(TAG, "Ride with ID " + rideId + " not found.");
+                    listener.onRideFetched(null); // Not found
                 }
-                // Call the listener's success method with the filtered list
-                Log.d(TAG, "Finished processing. Found " + rideOffers.size() + " valid ride offers.");
-                listener.onRidesFetched(rideOffers);
             }
 
             @Override
-            public void onCancelled(@NonNull DatabaseError databaseError) {
-                // Call the listener's error method
-                Log.e(TAG, "Firebase query cancelled or failed: ", databaseError.toException());
-                listener.onError(databaseError);
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Error fetching ride by ID " + rideId, error.toException());
+                listener.onError(error);
             }
         });
     }
 
-    // ... [rest of your RideService class might go here] ...
+
+    /**
+     * Fetches all ride offers (driver set, rider null, not complete).
+     * @param listener Listener to receive the list of offers or error.
+     */
+    public void getAllRideOffers(@NonNull final RideListListener listener) {
+        Query query = ridesRef.orderByChild("rider").equalTo(null);
+        query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride -> {
+            // Additional client-side filtering for offers
+            boolean hasDriver = ride.getDriver() != null && !ride.getDriver().trim().isEmpty();
+            boolean noRider = ride.getRider() == null || ride.getRider().trim().isEmpty(); // Redundant check
+            boolean notComplete = !ride.isComplete();
+            return hasDriver && noRider && notComplete;
+        }, "getAllRideOffers"));
+    }
+
+    /**
+     * Fetches all ride requests (rider set, driver null, not complete).
+     * @param listener Listener to receive the list of requests or error.
+     */
+    public void getAllRideRequests(@NonNull final RideListListener listener) {
+        Query query = ridesRef.orderByChild("driver").equalTo(null);
+        query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride -> {
+            // Additional client-side filtering for requests
+            boolean hasRider = ride.getRider() != null && !ride.getRider().trim().isEmpty();
+            boolean noDriver = ride.getDriver() == null || ride.getDriver().trim().isEmpty(); // Redundant check
+            boolean notComplete = !ride.isComplete();
+            return hasRider && noDriver && notComplete;
+        }, "getAllRideRequests"));
+    }
+
+    /**
+     * Fetches all accepted rides (driver set, rider set, not complete).
+     * @param listener Listener to receive the list of accepted rides or error.
+     */
+    public void getAllAcceptedRides(@NonNull final RideListListener listener) {
+        // Query by isComplete=false, filter the rest client-side
+        Query query = ridesRef.orderByChild("complete").equalTo(false); // Note: Firebase stores boolean as 'complete'
+        query.addListenerForSingleValueEvent(createListValueEventListener(listener, ride -> {
+            // Client-side filtering for accepted rides
+            boolean hasDriver = ride.getDriver() != null && !ride.getDriver().trim().isEmpty();
+            boolean hasRider = ride.getRider() != null && !ride.getRider().trim().isEmpty();
+            boolean notComplete = !ride.isComplete(); // Should be true from query
+            return hasDriver && hasRider && notComplete;
+        }, "getAllAcceptedRides"));
+    }
+
+    // --- Helper for creating ValueEventListeners for lists ---
+    private interface RideFilter {
+        boolean shouldInclude(Ride ride);
+    }
+
+    private ValueEventListener createListValueEventListener(@NonNull final RideListListener listener, @NonNull final RideFilter filter, final String operationTag) {
+        return new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                List<Ride> rides = new ArrayList<>();
+                Log.d(TAG, operationTag + ": onDataChange processing " + dataSnapshot.getChildrenCount() + " potential rides.");
+                for (DataSnapshot snapshot : dataSnapshot.getChildren()) {
+                    try {
+                        Ride ride = snapshot.getValue(Ride.class);
+                        if (ride != null) {
+                            setRideIdFromKey(ride, snapshot.getKey()); // Ensure ID is set
+                            if (filter.shouldInclude(ride)) { // Apply filter
+                                rides.add(ride);
+                            }
+                        } else {
+                            Log.w(TAG, operationTag + ": Fetched null Ride object for key: " + snapshot.getKey());
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, operationTag + ": Error processing snapshot: " + snapshot.getKey(), e);
+                    }
+                }
+                Log.d(TAG, operationTag + ": Finished processing. Found " + rides.size() + " matching rides.");
+                listener.onRidesFetched(rides);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+                Log.e(TAG, "Firebase query cancelled or failed (" + operationTag + "): ", databaseError.toException());
+                listener.onError(databaseError);
+            }
+        };
+    }
+
+    // --- Update Operations ---
+
+    /**
+     * Updates an entire existing ride. Replaces all data at /rides/{rideId}.
+     * Ensures the rideId within the object matches the path ID.
+     * @param rideId The ID of the ride to update.
+     * @param updatedRideData A Ride object containing the complete new data.
+     * @param listener Optional listener for completion status.
+     */
+    public void updateRide(int rideId, @NonNull Ride updatedRideData, @Nullable CompletionListener listener) {
+        if (updatedRideData.getRideId() != 0 && updatedRideData.getRideId() != rideId) {
+            Log.w(TAG, "updateRide: Mismatch between path rideId (" + rideId + ") and object rideId (" + updatedRideData.getRideId() + "). Using path ID.");
+        }
+        // Ensure the ID within the object matches the path ID we are writing to
+        updatedRideData.setRideId(rideId);
+
+        ridesRef.child(String.valueOf(rideId)).setValue(updatedRideData)
+                .addOnCompleteListener(createWriteCompleteListener(listener, "updateRide"));
+    }
+
+    /**
+     * Accepts a ride offer or request by adding the missing driver or rider.
+     * @param rideId The ID of the ride to accept.
+     * @param acceptingUserEmail The email of the user accepting the ride.
+     * @param listener Optional listener for completion status.
+     */
+    public void acceptRide(final int rideId, @NonNull final String acceptingUserEmail, @Nullable final CompletionListener listener) {
+        if (acceptingUserEmail.trim().isEmpty()) {
+            Log.e(TAG, "acceptRide: Accepting user email cannot be empty.");
+            if (listener != null) listener.onFailure(new IllegalArgumentException("Accepting user email cannot be empty"));
+            return;
+        }
+
+        DatabaseReference rideNodeRef = ridesRef.child(String.valueOf(rideId));
+
+        rideNodeRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (!snapshot.exists()) {
+                    Log.e(TAG, "acceptRide: Ride with ID " + rideId + " not found.");
+                    if (listener != null) listener.onFailure(new Exception("Ride not found"));
+                    return;
+                }
+
+                Ride ride = snapshot.getValue(Ride.class);
+                if (ride == null) {
+                    Log.e(TAG, "acceptRide: Could not deserialize ride data for ID " + rideId);
+                    if (listener != null) listener.onFailure(new Exception("Could not read ride data"));
+                    return;
+                }
+
+                // Determine if accepting as driver or rider
+                Map<String, Object> updates = new HashMap<>();
+                boolean needsUpdate = false;
+
+                if (ride.getDriver() != null && !ride.getDriver().trim().isEmpty() &&
+                        (ride.getRider() == null || ride.getRider().trim().isEmpty())) {
+                    // Existing driver, accepting as RIDER
+                    Log.d(TAG, "acceptRide: Accepting ride " + rideId + " as RIDER (" + acceptingUserEmail + ")");
+                    updates.put("rider", acceptingUserEmail);
+                    needsUpdate = true;
+                } else if (ride.getRider() != null && !ride.getRider().trim().isEmpty() &&
+                        (ride.getDriver() == null || ride.getDriver().trim().isEmpty())) {
+                    // Existing rider, accepting as DRIVER
+                    Log.d(TAG, "acceptRide: Accepting ride " + rideId + " as DRIVER (" + acceptingUserEmail + ")");
+                    updates.put("driver", acceptingUserEmail);
+                    needsUpdate = true;
+                } else {
+                    // Ride might already be accepted or in an invalid state
+                    Log.w(TAG, "acceptRide: Ride " + rideId + " is not in a state to be accepted (already full or invalid).");
+                    if (listener != null) listener.onFailure(new IllegalStateException("Ride cannot be accepted in its current state"));
+                    return;
+                }
+
+                if (needsUpdate) {
+                    // Perform the update using updateChildren
+                    rideNodeRef.updateChildren(updates)
+                            .addOnCompleteListener(createWriteCompleteListener(listener, "acceptRide (updateChildren)"));
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "acceptRide: Failed to read ride data for ID " + rideId, error.toException());
+                if (listener != null) listener.onFailure(error.toException());
+            }
+        });
+    }
+
+    /**
+     * Marks a ride as complete by setting the 'isComplete' flag to true.
+     * @param rideId The ID of the ride to complete.
+     * @param listener Optional listener for completion status.
+     */
+    public void completeRide(int rideId, @Nullable CompletionListener listener) {
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("complete", true); // Use "complete" as likely stored by Firebase for boolean 'isComplete'
+
+        ridesRef.child(String.valueOf(rideId)).updateChildren(updates)
+                .addOnCompleteListener(createWriteCompleteListener(listener, "completeRide"));
+    }
+
+    // --- Delete Operation ---
+
+    /**
+     * Deletes a ride by its ID.
+     * @param rideId The ID of the ride to delete.
+     * @param listener Optional listener for completion status.
+     */
+    public void deleteRide(int rideId, @Nullable CompletionListener listener) {
+        ridesRef.child(String.valueOf(rideId)).removeValue()
+                .addOnCompleteListener(createWriteCompleteListener(listener, "deleteRide"));
+    }
 
 }
