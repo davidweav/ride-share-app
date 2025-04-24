@@ -51,7 +51,7 @@ public class RideServiceApiTest {
     private static final String TAG = "RideServiceApiTest";
     private static final int ASYNC_TIMEOUT_SECONDS = 25; // Slightly longer timeout for device tests
     private static final String TEST_USER_EMAIL = "asr05918@uga.edu";
-    private static final String TEST_USER_PASSWORD = "YOUR_PASSWORD_HERE"; // <<< --- IMPORTANT: SET PASSWORD HERE
+    private static final String TEST_USER_PASSWORD = "spaugh11AA@@"; // <<< --- IMPORTANT: SET PASSWORD HERE
 
     // Shared state for tests (use cautiously) - consider creating fresh data per test
     private static final AtomicInteger lastCreatedRideId = new AtomicInteger(-1);
@@ -318,7 +318,7 @@ public class RideServiceApiTest {
         final AtomicBoolean success = new AtomicBoolean(false);
         // !!! IMPORTANT: Replace with an ID of a ride OFFER/REQUEST created by a DIFFERENT user !!!
         // !!! Or create one specifically for this test in @Before or a preceding test !!!
-        int rideIdToAccept = 1; // <<< --- FIND/CREATE A VALID ID FOR THIS
+        int rideIdToAccept = 10; // <<< --- FIND/CREATE A VALID ID FOR THIS
 
         System.out.println("Attempting to accept ride ID: " + rideIdToAccept);
 
