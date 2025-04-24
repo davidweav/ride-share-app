@@ -23,6 +23,7 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 
 import edu.uga.cs.rideshareapp.firebase.RideService;
+import edu.uga.cs.rideshareapp.model.Ride;
 // Removed unused Ride import: import edu.uga.cs.rideshareapp.model.Ride;
 
 import java.util.Locale; // Import Locale for SimpleDateFormat
@@ -47,6 +48,12 @@ public class PostRideActivity extends AppCompatActivity {
         // Initialize RideService
         rideService = new RideService();
 
+        int rideId = getIntent().getIntExtra("id", -1);
+        String from = getIntent().getStringExtra("from");
+        String to = getIntent().getStringExtra("to");
+        String datetime = getIntent().getStringExtra("datetime");
+        boolean isDriver = getIntent().getBooleanExtra("isDriver", true); // default true
+
         // Get references to UI elements
         postRideButton = findViewById(R.id.postRideButton);
         EditText dateTimeField = findViewById(R.id.dateTimeField);
@@ -54,6 +61,15 @@ public class PostRideActivity extends AppCompatActivity {
         EditText toField = findViewById(R.id.toField);
         RadioButton offerRadio = findViewById(R.id.offerRadio);
 
+        fromField.setText(from);
+        toField.setText(to);
+        dateTimeField.setText(datetime);
+
+        if (isDriver) {
+            ((RadioButton) findViewById(R.id.offerRadio)).setChecked(true);
+        } else {
+            ((RadioButton) findViewById(R.id.requestRadio)).setChecked(true);
+        }
 
         // --- Date & Time Picker Logic ---
         dateTimeField.setOnClickListener(v -> {
@@ -87,21 +103,16 @@ public class PostRideActivity extends AppCompatActivity {
         postRideButton.setOnClickListener(v -> {
             // Get input values
             String dateTime = dateTimeField.getText().toString().trim();
-            String from = fromField.getText().toString().trim();
-            String to = toField.getText().toString().trim();
+            String fromVal = fromField.getText().toString().trim();
+            String toVal = toField.getText().toString().trim();
             boolean isOffer = offerRadio.isChecked(); // True if offering (driver), false if requesting (rider)
 
             // Basic Input Validation
-            if (dateTime.isEmpty() || from.isEmpty() || to.isEmpty()) {
+            if (dateTime.isEmpty() || fromVal.isEmpty() || toVal.isEmpty()) {
                 Toast.makeText(PostRideActivity.this, "Please fill in all fields", Toast.LENGTH_SHORT).show();
                 return;
             }
 
-            // *** No need to get userEmail here, RideService does it internally ***
-            // FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
-            // if (user == null) { ... } // RideService handles this check now
-            // String userEmail = user.getEmail();
-            // if (userEmail == null || userEmail.isEmpty()) { ... }
 
             // Disable button to prevent multiple clicks
             postRideButton.setEnabled(false);
@@ -132,7 +143,42 @@ public class PostRideActivity extends AppCompatActivity {
             // Call the RideService method with the CORRECT signature
             Log.d(TAG, "Calling createNewRideWithStrings...");
             // *** Corrected Call: Removed userEmail argument ***
-            rideService.createNewRideWithStrings(dateTime, isOffer, from, to, listener);
+
+            FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+
+            Ride ride = new Ride();
+            ride.setTo(toVal);
+            ride.setFrom(fromVal);
+            ride.setDateTime(dateTime);
+            if (isOffer != isDriver) {
+                ride.setDriver("");
+                ride.setRider(user.getEmail());
+            }
+
+
+            if(rideId != -1) {
+                rideService.updateRide(rideId, ride, new RideService.CompletionListener() {
+                    @Override
+                    public void onSuccess() {
+                        postRideButton.setEnabled(true);
+                        // Assuming you have a string resource R.string.post_ride
+                        postRideButton.setText("Ride updated successfully");
+                        Log.d(TAG, "Ride updated successfully.");
+                        Toast.makeText(PostRideActivity.this, "Ride updated successfully!", Toast.LENGTH_SHORT).show();
+                        finish(); // Close activity on success
+                    }
+
+                    @Override
+                    public void onFailure(Exception e) {
+                        postRideButton.setEnabled(true);
+                        // Assuming you have a string resource R.string.post_ride
+                        postRideButton.setText(getString(R.string.post_ride));
+                        Log.e(TAG, "Failed to post ride: " + e.getMessage(), e);
+                        Toast.makeText(PostRideActivity.this, "Failed to post ride: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
+            rideService.createNewRideWithStrings(dateTime, isOffer, fromVal, toVal, listener);
         });
     }
 }

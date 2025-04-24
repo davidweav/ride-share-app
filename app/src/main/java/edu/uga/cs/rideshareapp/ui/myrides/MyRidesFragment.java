@@ -1,5 +1,6 @@
 package edu.uga.cs.rideshareapp.ui.myrides;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -17,6 +18,7 @@ import com.google.firebase.database.DatabaseError;
 import java.util.ArrayList;
 import java.util.List;
 
+import edu.uga.cs.rideshareapp.PostRideActivity;
 import edu.uga.cs.rideshareapp.R;
 import edu.uga.cs.rideshareapp.adapter.RideManageAdapter;
 import edu.uga.cs.rideshareapp.firebase.RideService;
@@ -57,8 +59,14 @@ public class MyRidesFragment extends Fragment {
         offerAdapter = new RideManageAdapter(pendingOffersList, new RideManageAdapter.OnRideActionListener() {
             @Override
             public void onEdit(Ride ride) {
-                // TODO: Launch edit screen here
-                Toast.makeText(requireContext(), "Edit not implemented yet", Toast.LENGTH_SHORT).show();
+                Intent intent = new Intent(getContext(), PostRideActivity.class);
+                intent.putExtra("id", ride.getRideId());
+                intent.putExtra("from", ride.getFrom());
+                intent.putExtra("to", ride.getTo());
+                intent.putExtra("datetime", ride.getDateTime());
+                intent.putExtra("isDriver", true);
+                startActivity(intent);
+
             }
 
             @Override
@@ -87,13 +95,28 @@ public class MyRidesFragment extends Fragment {
                     }
                 });
             }
-        });
+
+            @Override
+            public void onConfirm(Ride ride) {
+
+            }
+
+
+        }, false);
 
         // Set up request adapter with delete support
         requestAdapter = new RideManageAdapter(pendingRequestsList, new RideManageAdapter.OnRideActionListener() {
             @Override
             public void onEdit(Ride ride) {
-                Toast.makeText(requireContext(), "Edit not implemented yet", Toast.LENGTH_SHORT).show();
+                Intent intent = new Intent(getContext(), PostRideActivity.class);
+                intent.putExtra("id", ride.getRideId());
+                intent.putExtra("from", ride.getFrom());
+                intent.putExtra("to", ride.getTo());
+                intent.putExtra("datetime", ride.getDateTime());
+                intent.putExtra("isDriver", false);
+                startActivity(intent);
+
+
             }
 
             @Override
@@ -120,10 +143,42 @@ public class MyRidesFragment extends Fragment {
                     }
                 });
             }
-        });
+
+            @Override
+            public void onConfirm(Ride ride) {
+
+            }
+        }, false);
 
         // Accepted rides adapter — read-only
-        acceptedAdapter = new RideManageAdapter(acceptedRidesList, null);
+        acceptedAdapter = new RideManageAdapter(acceptedRidesList, new RideManageAdapter.OnRideActionListener() {
+            @Override
+            public void onEdit(Ride ride) {
+
+            }
+
+            @Override
+            public void onDelete(Ride ride) {
+
+            }
+
+            @Override
+            public void onConfirm(Ride ride) {
+                rideService.completeRide(ride.getRideId(), new RideService.CompletionListener() {
+                    @Override
+                    public void onSuccess() {
+                        acceptedRidesList.remove(ride);
+                        acceptedAdapter.notifyDataSetChanged();
+                        Toast.makeText(requireContext(), "Confirmed Ride", Toast.LENGTH_SHORT).show();
+                    }
+
+                    @Override
+                    public void onFailure(Exception e) {
+                        Toast.makeText(requireContext(), "Failed to Confirm Ride", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+        }, true);
 
         // Attach adapters to views
         pendingOffersRecycler.setAdapter(offerAdapter);
